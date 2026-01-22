@@ -247,13 +247,18 @@ export type RenderNode = {
   mesh?: number;
   skin?: number;
   children: number[];
+  matrix?: Float32Array<ArrayBufferLike>;
   translation: [number, number, number];
   rotation: [number, number, number, number];
   scale: [number, number, number];
   worldMatrix: Float32Array<ArrayBufferLike>;
+  localMatrix: Float32Array<ArrayBufferLike>;
   baseTranslation: [number, number, number];
   baseRotation: [number, number, number, number];
   baseScale: [number, number, number];
+  baseMatrix?: Float32Array<ArrayBufferLike>;
+  usesMatrix: boolean;
+  animatedTrs: boolean;
 };
 
 export type RenderPrimitive = {
@@ -606,7 +611,7 @@ export async function buildRenderScene(doc: GltfDocument, options: GltfOptions =
   const skins = buildSkins(json, buffers);
   const primitives = collectInstances(json, meshPrimitives, nodes);
   updateSkinMatrices(primitives, nodes, skins);
-  const animations = buildAnimations(json, buffers);
+  const animations = buildAnimations(json, buffers, nodes);
   const bounds = computeSceneBounds(primitives, nodes);
   const materialBases = materials.map((material) => cloneMaterial(material));
   return { primitives, materials, materialBases, samplers, nodes, skins, animations, bounds, json };
@@ -640,6 +645,11 @@ export function applyAnimationFrame(scene: RenderScene, time: number, animationI
     node.translation = [...node.baseTranslation];
     node.rotation = [...node.baseRotation];
     node.scale = [...node.baseScale];
+    if (node.baseMatrix && node.usesMatrix && !node.animatedTrs) {
+      node.matrix = new Float32Array(node.baseMatrix);
+    } else {
+      node.matrix = undefined;
+    }
   });
   if (animation.pointerChannels.length > 0) {
     resetMaterialTransforms(scene);
@@ -1149,25 +1159,39 @@ function alphaModeToId(mode?: "OPAQUE" | "MASK" | "BLEND"): number {
 function buildNodes(json: GltfJson): RenderNode[] {
   const nodes = json.nodes ?? [];
   return nodes.map((node) => {
-    const translation: [number, number, number] = node.translation ?? [0, 0, 0];
-    const rotation: [number, number, number, number] = node.rotation ?? [0, 0, 0, 1];
-    const scale: [number, number, number] = node.scale ?? [1, 1, 1];
+    const matrix = node.matrix ? new Float32Array(node.matrix) : undefined;
+    const hasMatrix = Boolean(matrix);
+    const baseTransform = matrix
+      ? decomposeMat4(matrix)
+      : {
+          translation: (node.translation ?? [0, 0, 0]) as [number, number, number],
+          rotation: (node.rotation ?? [0, 0, 0, 1]) as [number, number, number, number],
+          scale: (node.scale ?? [1, 1, 1]) as [number, number, number]
+        };
+    const translation = baseTransform.translation;
+    const rotation = baseTransform.rotation;
+    const scale = baseTransform.scale;
     return {
       mesh: node.mesh,
       skin: node.skin,
       children: node.children ?? [],
+      matrix,
       translation: [...translation],
       rotation: [...rotation],
       scale: [...scale],
       worldMatrix: identityMat4(),
+      localMatrix: identityMat4(),
       baseTranslation: [...translation],
       baseRotation: [...rotation],
-      baseScale: [...scale]
+      baseScale: [...scale],
+      baseMatrix: matrix ? new Float32Array(matrix) : undefined,
+      usesMatrix: hasMatrix,
+      animatedTrs: false
     };
   });
 }
 
-function buildAnimations(json: GltfJson, buffers: ArrayBuffer[]): RenderAnimation[] {
+function buildAnimations(json: GltfJson, buffers: ArrayBuffer[], nodes: RenderNode[]): RenderAnimation[] {
   const animations = json.animations ?? [];
   const accessors = json.accessors;
   const bufferViews = json.bufferViews;
@@ -1217,8 +1241,12 @@ function buildAnimations(json: GltfJson, buffers: ArrayBuffer[]): RenderAnimatio
         if (!path) {
           continue;
         }
+        const targetNode = channel.target?.node ?? 0;
+        if (nodes[targetNode]) {
+          nodes[targetNode].animatedTrs = true;
+        }
         channels.push({
-          targetNode: channel.target?.node ?? 0,
+          targetNode,
           path,
           input,
           output,
@@ -1739,7 +1767,12 @@ function computeWorldMatrices(nodeIndex: number, parentMatrix: Float32Array, nod
   if (!node) {
     return;
   }
-  const localMatrix = mat4FromTrs(node.translation, node.rotation, node.scale);
+  const baseMatrix = node.matrix;
+  const useMatrix = baseMatrix && !node.animatedTrs ? baseMatrix : null;
+  const localMatrix = useMatrix
+    ? new Float32Array(useMatrix)
+    : mat4FromTrs(node.translation, node.rotation, node.scale);
+  node.localMatrix = localMatrix;
   const world = multiplyMat4(parentMatrix, localMatrix);
   node.worldMatrix = world;
   node.children.forEach((child) => computeWorldMatrices(child, world, nodes));
@@ -1805,6 +1838,47 @@ function normalizeQuat(quat: [number, number, number, number]): [number, number,
   const [x, y, z, w] = quat;
   const len = Math.hypot(x, y, z, w) || 1;
   return [x / len, y / len, z / len, w / len];
+}
+
+function decomposeMat4(mat: Float32Array): {
+  translation: [number, number, number];
+  rotation: [number, number, number, number];
+  scale: [number, number, number];
+} {
+  const translation: [number, number, number] = [mat[12], mat[13], mat[14]];
+  const sx = Math.hypot(mat[0], mat[1], mat[2]) || 1;
+  const sy = Math.hypot(mat[4], mat[5], mat[6]) || 1;
+  const sz = Math.hypot(mat[8], mat[9], mat[10]) || 1;
+  const det =
+    mat[0] * (mat[5] * mat[10] - mat[6] * mat[9]) -
+    mat[4] * (mat[1] * mat[10] - mat[2] * mat[9]) +
+    mat[8] * (mat[1] * mat[6] - mat[2] * mat[5]);
+  const scale: [number, number, number] = det < 0 ? [-sx, sy, sz] : [sx, sy, sz];
+  const r00 = mat[0] / scale[0];
+  const r01 = mat[4] / scale[1];
+  const r02 = mat[8] / scale[2];
+  const r10 = mat[1] / scale[0];
+  const r11 = mat[5] / scale[1];
+  const r12 = mat[9] / scale[2];
+  const r20 = mat[2] / scale[0];
+  const r21 = mat[6] / scale[1];
+  const r22 = mat[10] / scale[2];
+  const trace = r00 + r11 + r22;
+  let rotation: [number, number, number, number];
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2;
+    rotation = [(r21 - r12) / s, (r02 - r20) / s, (r10 - r01) / s, 0.25 * s];
+  } else if (r00 > r11 && r00 > r22) {
+    const s = Math.sqrt(1 + r00 - r11 - r22) * 2;
+    rotation = [0.25 * s, (r01 + r10) / s, (r02 + r20) / s, (r21 - r12) / s];
+  } else if (r11 > r22) {
+    const s = Math.sqrt(1 + r11 - r00 - r22) * 2;
+    rotation = [(r01 + r10) / s, 0.25 * s, (r12 + r21) / s, (r02 - r20) / s];
+  } else {
+    const s = Math.sqrt(1 + r22 - r00 - r11) * 2;
+    rotation = [(r02 + r20) / s, (r12 + r21) / s, 0.25 * s, (r10 - r01) / s];
+  }
+  return { translation, rotation: normalizeQuat(rotation), scale };
 }
 
 function invertMat4(m: Float32Array): Float32Array {
