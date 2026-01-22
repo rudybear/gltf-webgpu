@@ -1,9 +1,13 @@
 import "../shared/ui.css";
 import {
   applyAnimationFrame,
+  applyInteractivityPointer,
   buildRenderScene,
   loadGltfFromFiles,
   loadImageBitmaps,
+  refreshInstanceMatrices,
+  updateSkinMatrices,
+  updateWorldMatrices,
   type RenderScene
 } from "../gltf";
 import { parseInteractivity, summarizeInteractivity } from "../extensions/interactivity";
@@ -77,11 +81,11 @@ app.innerHTML = `
         </div>
         <div class="card" id="interactivityCard">
           <strong>Extensions</strong>
-          <p>KHR_interactivity (pending)</p>
-          <p>KHR_node_visibility (pending)</p>
-          <p>KHR_node_selectability (pending)</p>
-          <p>KHR_node_hoverability (pending)</p>
-          <p>KHR_animation_pointer (pending)</p>
+          <p>KHR_interactivity (supported)</p>
+          <p>KHR_node_visibility (supported)</p>
+          <p>KHR_node_selectability (supported)</p>
+          <p>KHR_node_hoverability (supported)</p>
+          <p>KHR_animation_pointer (supported)</p>
         </div>
       </div>
     </aside>
@@ -175,6 +179,7 @@ let flipVEnabled = true;
 let iblEnabled = true;
 let iblIntensityValue = 1;
 let sheenBoostValue = 1;
+let interactivityDirty = false;
 
 loadButton.addEventListener("click", () => fileInput.click());
 iblLoadButton.addEventListener("click", () => iblInput.click());
@@ -342,7 +347,7 @@ fileInput.addEventListener("change", async () => {
     const json = doc.json;
     const ext = json.extensions?.KHR_interactivity;
     const graph = parseInteractivity(ext);
-    interactivityRuntime = new InteractivityRuntime(graph);
+    interactivityRuntime = graph ? new InteractivityRuntime(graph, json) : null;
     const summary = summarizeInteractivity(graph);
     const scene = await buildRenderScene(doc, {
       fileMap: new Map(files.map((file) => [file.name, file]))
@@ -361,6 +366,37 @@ fileInput.addEventListener("change", async () => {
     }
     if (renderer) {
       renderer.setScene(scene, images);
+    }
+    if (interactivityRuntime) {
+      interactivityRuntime.bindAdapter({
+        applyPointer: (pointer, value) => {
+          const normalized = Array.isArray(value) ? value.map(Number) : [Number(value)];
+          if (applyInteractivityPointer(scene, pointer, normalized)) {
+            interactivityDirty = true;
+          }
+        },
+        setNodeVisibility: (nodeIndex, visible) => {
+          const node = scene.nodes[nodeIndex];
+          if (node) {
+            node.visible = visible;
+            interactivityDirty = true;
+          }
+        },
+        setNodeSelectable: (nodeIndex, selectable) => {
+          const node = scene.nodes[nodeIndex];
+          if (node) {
+            node.selectable = selectable;
+          }
+        },
+        setNodeHoverable: (nodeIndex, hoverable) => {
+          const node = scene.nodes[nodeIndex];
+          if (node) {
+            node.hoverable = hoverable;
+          }
+        }
+      });
+      interactivityRuntime.start();
+      interactivityDirty = true;
     }
 
     const instanceCount = scene.primitives.reduce(
@@ -440,6 +476,10 @@ fileInput.addEventListener("change", async () => {
       <p>Nodes: ${summary.nodes}</p>
       <p>Edges: ${summary.edges}</p>
       <p>Variables: ${summary.variables}</p>
+      <p>KHR_node_visibility: supported</p>
+      <p>KHR_node_selectability: supported</p>
+      <p>KHR_node_hoverability: supported</p>
+      <p>KHR_animation_pointer: supported</p>
     `;
   } catch (err) {
     scenePanel.innerHTML = `
@@ -504,15 +544,27 @@ resizeObserver.observe(canvas);
 canvas.addEventListener("pointerdown", (event) => {
   canvas.setPointerCapture(event.pointerId);
   camera.onPointerDown(event.clientX, event.clientY);
+  const rect = canvas.getBoundingClientRect();
+  const x = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+  const y = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0;
+  interactivityRuntime?.queueEvent({ type: "pointerdown", x, y });
 });
 
 canvas.addEventListener("pointermove", (event) => {
   camera.onPointerMove(event.clientX, event.clientY);
+  const rect = canvas.getBoundingClientRect();
+  const x = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+  const y = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0;
+  interactivityRuntime?.queueEvent({ type: "pointermove", x, y });
 });
 
 canvas.addEventListener("pointerup", (event) => {
   canvas.releasePointerCapture(event.pointerId);
   camera.onPointerUp();
+  const rect = canvas.getBoundingClientRect();
+  const x = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
+  const y = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0;
+  interactivityRuntime?.queueEvent({ type: "pointerup", x, y });
 });
 
 canvas.addEventListener("wheel", (event) => {
@@ -523,12 +575,26 @@ canvas.addEventListener("wheel", (event) => {
 const animationLoop = (time: number) => {
   const delta = Math.max(0, (time - lastFrameTime) / 1000);
   lastFrameTime = time;
+  let needsRefresh = false;
   if (renderer && pendingScene && pendingScene.animations.length > 0 && !animationPaused) {
     animationTime += delta;
     applyAnimationFrame(pendingScene, animationTime, currentAnimationIndex);
+    needsRefresh = true;
+  }
+  if (interactivityRuntime) {
+    interactivityRuntime.tick(delta);
+    if (interactivityRuntime.consumeDirty()) {
+      interactivityDirty = true;
+    }
+  }
+  if (renderer && pendingScene && (needsRefresh || interactivityDirty)) {
+    updateWorldMatrices(pendingScene.nodes, pendingScene.json);
+    refreshInstanceMatrices(pendingScene);
+    updateSkinMatrices(pendingScene.primitives, pendingScene.nodes, pendingScene.skins);
     renderer.updateInstanceBuffers(pendingScene.primitives);
     renderer.updateMaterialUniforms(pendingScene.materials);
     renderer.updateSkinBuffers(pendingScene.primitives);
+    interactivityDirty = false;
   }
   requestAnimationFrame(animationLoop);
 };

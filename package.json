@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:interactivity": "npm --prefix packages/interactivity run test"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.44",

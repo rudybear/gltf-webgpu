@@ -1,51 +1,32 @@
-export type InteractivityNode = {
-  id: number;
-  type: string;
-  inputs?: Record<string, unknown>;
-  outputs?: Record<string, unknown>;
-};
-
-export type InteractivityEdge = {
-  from: number;
-  to: number;
-  fromPort?: string;
-  toPort?: string;
-};
-
 export type InteractivityGraph = {
-  nodes: InteractivityNode[];
-  edges: InteractivityEdge[];
+  types?: Array<{ signature?: string }>;
   variables?: unknown[];
+  declarations?: Array<{ op?: string }>;
+  nodes?: Array<{
+    declaration?: number;
+    flows?: Record<string, { node: number; socket: string }>;
+  }>;
 };
 
-export function parseInteractivity(payload: unknown): InteractivityGraph {
+export function parseInteractivity(payload: unknown): InteractivityGraph | null {
   if (!payload || typeof payload !== "object") {
-    return { nodes: [], edges: [] };
+    return null;
   }
-
-  const data = payload as {
-    nodes?: Array<{ id?: number; type?: string }>;
-    edges?: Array<{ from?: number; to?: number }>;
-    variables?: unknown[];
-  };
-
-  const nodes = (data.nodes ?? []).map((node, index) => ({
-    id: typeof node.id === "number" ? node.id : index,
-    type: node.type ?? "unknown"
-  }));
-
-  const edges = (data.edges ?? []).map((edge) => ({
-    from: edge.from ?? 0,
-    to: edge.to ?? 0
-  }));
-
-  return { nodes, edges, variables: data.variables };
+  const data = payload as { graphs?: InteractivityGraph[] };
+  const graph = data.graphs?.[0];
+  return graph ?? null;
 }
 
-export function summarizeInteractivity(graph: InteractivityGraph) {
+export function summarizeInteractivity(graph: InteractivityGraph | null) {
+  const nodeCount = graph?.nodes?.length ?? 0;
+  const variableCount = graph?.variables?.length ?? 0;
+  const edgeCount = graph?.nodes?.reduce((total, node) => {
+    const flows = node.flows ? Object.keys(node.flows).length : 0;
+    return total + flows;
+  }, 0) ?? 0;
   return {
-    nodes: graph.nodes.length,
-    edges: graph.edges.length,
-    variables: graph.variables?.length ?? 0
+    nodes: nodeCount,
+    edges: edgeCount,
+    variables: variableCount
   };
 }

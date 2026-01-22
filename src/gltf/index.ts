@@ -65,6 +65,7 @@ export type GltfNode = {
   rotation?: [number, number, number, number];
   scale?: [number, number, number];
   name?: string;
+  extensions?: Record<string, unknown>;
 };
 
 export type GltfScene = {
@@ -259,6 +260,12 @@ export type RenderNode = {
   baseMatrix?: Float32Array<ArrayBufferLike>;
   usesMatrix: boolean;
   animatedTrs: boolean;
+  visible: boolean;
+  baseVisible: boolean;
+  selectable: boolean;
+  baseSelectable: boolean;
+  hoverable: boolean;
+  baseHoverable: boolean;
 };
 
 export type RenderPrimitive = {
@@ -645,6 +652,9 @@ export function applyAnimationFrame(scene: RenderScene, time: number, animationI
     node.translation = [...node.baseTranslation];
     node.rotation = [...node.baseRotation];
     node.scale = [...node.baseScale];
+    node.visible = node.baseVisible;
+    node.selectable = node.baseSelectable;
+    node.hoverable = node.baseHoverable;
     if (node.baseMatrix && node.usesMatrix && !node.animatedTrs) {
       node.matrix = new Float32Array(node.baseMatrix);
     } else {
@@ -685,6 +695,9 @@ export function refreshInstanceMatrices(scene: RenderScene) {
     const instanceMatrices: number[] = [];
     for (const nodeIndex of primitive.nodeIndices) {
       const mat = scene.nodes[nodeIndex].worldMatrix;
+      if (!scene.nodes[nodeIndex].visible) {
+        continue;
+      }
       for (let i = 0; i < 16; i += 1) {
         instanceMatrices.push(mat[i]);
       }
@@ -847,6 +860,9 @@ function computeSceneBounds(primitives: RenderPrimitive[], nodes: RenderNode[]):
     for (const nodeIndex of primitive.nodeIndices) {
       const node = nodes[nodeIndex];
       if (!node) {
+        continue;
+      }
+      if (!node.visible) {
         continue;
       }
       const mat = node.worldMatrix;
@@ -1171,6 +1187,9 @@ function buildNodes(json: GltfJson): RenderNode[] {
     const translation = baseTransform.translation;
     const rotation = baseTransform.rotation;
     const scale = baseTransform.scale;
+    const visibilityExt = (node.extensions as { KHR_node_visibility?: { visible?: boolean } } | undefined)?.KHR_node_visibility;
+    const selectableExt = (node.extensions as { KHR_node_selectability?: { selectable?: boolean } } | undefined)?.KHR_node_selectability;
+    const hoverableExt = (node.extensions as { KHR_node_hoverability?: { hoverable?: boolean } } | undefined)?.KHR_node_hoverability;
     return {
       mesh: node.mesh,
       skin: node.skin,
@@ -1186,7 +1205,13 @@ function buildNodes(json: GltfJson): RenderNode[] {
       baseScale: [...scale],
       baseMatrix: matrix ? new Float32Array(matrix) : undefined,
       usesMatrix: hasMatrix,
-      animatedTrs: false
+      animatedTrs: false,
+      visible: visibilityExt?.visible ?? true,
+      baseVisible: visibilityExt?.visible ?? true,
+      selectable: selectableExt?.selectable ?? true,
+      baseSelectable: selectableExt?.selectable ?? true,
+      hoverable: hoverableExt?.hoverable ?? true,
+      baseHoverable: hoverableExt?.hoverable ?? true
     };
   });
 }
@@ -1403,38 +1428,101 @@ function resetMaterialTransforms(scene: RenderScene) {
   }
 }
 
-function applyPointerValue(scene: RenderScene, pointer: string, value: number[]) {
+function applyNodePointerValue(node: RenderNode, tokens: string[], value: number[]): boolean {
+  if (tokens[2] === "extensions" && tokens[3] === "KHR_node_visibility" && tokens[4] === "visible") {
+    node.visible = Boolean(value[0]);
+    return true;
+  }
+  if (tokens[2] === "extensions" && tokens[3] === "KHR_node_selectability" && tokens[4] === "selectable") {
+    node.selectable = Boolean(value[0]);
+    return true;
+  }
+  if (tokens[2] === "extensions" && tokens[3] === "KHR_node_hoverability" && tokens[4] === "hoverable") {
+    node.hoverable = Boolean(value[0]);
+    return true;
+  }
+  if (tokens[2] === "translation" && value.length >= 3) {
+    node.translation = [value[0], value[1], value[2]];
+    node.matrix = undefined;
+    node.usesMatrix = false;
+    return true;
+  }
+  if (tokens[2] === "rotation" && value.length >= 4) {
+    node.rotation = normalizeQuat([value[0], value[1], value[2], value[3]]);
+    node.matrix = undefined;
+    node.usesMatrix = false;
+    return true;
+  }
+  if (tokens[2] === "scale" && value.length >= 3) {
+    node.scale = [value[0], value[1], value[2]];
+    node.matrix = undefined;
+    node.usesMatrix = false;
+    return true;
+  }
+  if (tokens[2] === "matrix" && value.length >= 16) {
+    node.matrix = new Float32Array(value.slice(0, 16));
+    node.usesMatrix = true;
+    return true;
+  }
+  return false;
+}
+
+export function applyPointerValue(scene: RenderScene, pointer: string, value: number[]): boolean {
   const tokens = pointer.split("/").filter(Boolean);
-  if (tokens.length < 3 || tokens[0] !== "materials") {
-    return;
+  if (tokens.length < 3) {
+    return false;
+  }
+  if (tokens[0] === "nodes") {
+    const nodeIndex = Number.parseInt(tokens[1], 10);
+    if (Number.isNaN(nodeIndex)) {
+      return false;
+    }
+    const node = scene.nodes[nodeIndex];
+    if (!node) {
+      return false;
+    }
+    return applyNodePointerValue(node, tokens, value);
+  }
+  if (tokens[0] !== "materials") {
+    return false;
   }
   const materialIndex = Number.parseInt(tokens[1], 10);
   if (Number.isNaN(materialIndex)) {
-    return;
+    return false;
   }
   const material = scene.materials[materialIndex];
   if (!material) {
-    return;
+    return false;
   }
   if (tokens[2] === "pbrMetallicRoughness" && tokens[3] === "baseColorFactor" && value.length >= 4) {
     material.baseColorFactor = [value[0], value[1], value[2], value[3]];
-    return;
+    return true;
   }
   if (tokens[2] === "emissiveFactor" && value.length >= 3) {
     material.emissiveFactor = [value[0], value[1], value[2]];
-    return;
+    return true;
   }
   const target = resolveTextureInfoFromPointer(material, tokens);
   if (!target) {
-    return;
+    return false;
   }
   if (tokens[tokens.length - 1] === "offset" && value.length >= 2) {
     target.offset = [value[0], value[1]];
-  } else if (tokens[tokens.length - 1] === "scale" && value.length >= 2) {
-    target.scale = [value[0], value[1]];
-  } else if (tokens[tokens.length - 1] === "rotation" && value.length >= 1) {
-    target.rotation = value[0];
+    return true;
   }
+  if (tokens[tokens.length - 1] === "scale" && value.length >= 2) {
+    target.scale = [value[0], value[1]];
+    return true;
+  }
+  if (tokens[tokens.length - 1] === "rotation" && value.length >= 1) {
+    target.rotation = value[0];
+    return true;
+  }
+  return false;
+}
+
+export function applyInteractivityPointer(scene: RenderScene, pointer: string, value: number[]): boolean {
+  return applyPointerValue(scene, pointer, value);
 }
 
 function resolveTextureInfoFromPointer(material: RenderMaterial, tokens: string[]): RenderTextureInfo | null {
@@ -1671,7 +1759,7 @@ function buildSkins(json: GltfJson, buffers: ArrayBuffer[]): RenderSkin[] {
   });
 }
 
-function updateSkinMatrices(primitives: RenderPrimitive[], nodes: RenderNode[], skins: RenderSkin[]) {
+export function updateSkinMatrices(primitives: RenderPrimitive[], nodes: RenderNode[], skins: RenderSkin[]) {
   for (const primitive of primitives) {
     if (primitive.skinIndex === null || primitive.skinIndex === undefined) {
       primitive.jointMatrices = null;
