@@ -12,8 +12,8 @@ export function parseInteractivity(payload: unknown): InteractivityGraph | null 
   if (!payload || typeof payload !== "object") {
     return null;
   }
-  const data = payload as { graphs?: InteractivityGraph[] };
-  const graph = data.graphs?.[0];
+  const data = payload as { graphs?: InteractivityGraph[]; graph?: number };
+  const graph = data.graphs?.[data.graph ?? 0];
   return graph ?? null;
 }
 

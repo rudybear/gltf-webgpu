@@ -42,6 +42,7 @@ export type RuntimeGraph = {
   hoverPoint: [number, number, number];
   selectedNodeIndex: number;
   selectionPoint: [number, number, number];
+  selectionRayOrigin: [number, number, number];
   delays: DelayItem[];
   interpolations: Interpolation[];
   pointerInterpolations: PointerInterpolation[];
@@ -918,6 +919,8 @@ function evaluateValue(runtime: RuntimeGraph, nodeId: number, socket: string, st
       && op !== "event/onPointerUp"
       && op !== "event/onSelect"
       && op !== "event/onHover"
+      && op !== "event/onHoverIn"
+      && op !== "event/onHoverOut"
     ) {
       stack.delete(key);
       return cached;
@@ -1681,10 +1684,33 @@ function evaluateValue(runtime: RuntimeGraph, nodeId: number, socket: string, st
       break;
     }
     case "event/onSelect": {
-      if (socket === "selectedNodeIndex") {
+      // KHR_node_selectability sockets: selectedNode is a node reference.
+      if (socket === "selectedNode") {
+        const index = runtime.selectedNodeIndex;
+        result = { type: "ref" as ValueType, data: [index >= 0 ? `/nodes/${index}` : ""] };
+      } else if (socket === "selectedNodeIndex") {
         result = intValue([runtime.selectedNodeIndex]);
       } else if (socket === "selectionPoint") {
         result = { type: "float3" as ValueType, data: [...runtime.selectionPoint] };
+      } else if (socket === "selectionRayOrigin") {
+        result = { type: "float3" as ValueType, data: [...runtime.selectionRayOrigin] };
+      } else if (socket === "controllerIndex") {
+        result = intValue([0]);
+      } else if (socket === "event") {
+        result = { type: "ref" as ValueType, data: ["event:onSelect"] };
+      }
+      break;
+    }
+    case "event/onHoverIn":
+    case "event/onHoverOut": {
+      // KHR_node_hoverability sockets: hoveredNode is a node reference.
+      if (socket === "hoveredNode") {
+        const index = runtime.hoveredNodeIndex;
+        result = { type: "ref" as ValueType, data: [index >= 0 ? `/nodes/${index}` : ""] };
+      } else if (socket === "controllerIndex") {
+        result = intValue([0]);
+      } else if (socket === "event") {
+        result = { type: "ref" as ValueType, data: [`event:${op === "event/onHoverIn" ? "onHoverIn" : "onHoverOut"}`] };
       }
       break;
     }
@@ -3279,6 +3305,7 @@ export function createRuntime(
     hoverPoint: [NaN, NaN, NaN],
     selectedNodeIndex: -1,
     selectionPoint: [NaN, NaN, NaN],
+    selectionRayOrigin: [NaN, NaN, NaN],
     delays: [],
     interpolations: [],
     pointerInterpolations: [],

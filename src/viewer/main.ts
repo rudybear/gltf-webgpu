@@ -57,39 +57,41 @@ app.innerHTML = `
         <label class="muted">Sheen
           <input id="sheenBoost" type="range" min="0" max="4" step="0.1" value="1">
         </label>
-        <span class="muted">Interactivity: idle</span>
+        <span class="muted" id="interactivityStatus">Interactivity: idle</span>
       </div>
       <div class="canvas-wrap">
         <canvas id="viewerCanvas"></canvas>
       </div>
     </section>
-    <aside class="panel">
-      <h2>Scene</h2>
-      <div class="list" id="sceneList">
-        <div class="card">
-          <strong>No asset loaded</strong>
-          <p>Load a glTF or glb file to inspect nodes and animations.</p>
+    <div class="side-column">
+      <aside class="panel">
+        <h2>Diagnostics</h2>
+        <div class="list" id="diagnosticsList">
+          <div class="card">
+            <strong>Renderer</strong>
+            <p id="rendererStatus">Waiting for WebGPU...</p>
+            <p id="rendererDetail">Diagnostics pending...</p>
+          </div>
+          <div class="card" id="interactivityCard">
+            <strong>Extensions</strong>
+            <p>KHR_interactivity (supported)</p>
+            <p>KHR_node_visibility (supported)</p>
+            <p>KHR_node_selectability (supported)</p>
+            <p>KHR_node_hoverability (supported)</p>
+            <p>KHR_animation_pointer (supported)</p>
+          </div>
         </div>
-      </div>
-    </aside>
-    <aside class="panel">
-      <h2>Diagnostics</h2>
-      <div class="list" id="diagnosticsList">
-        <div class="card">
-          <strong>Renderer</strong>
-          <p id="rendererStatus">Waiting for WebGPU...</p>
-          <p id="rendererDetail">Diagnostics pending...</p>
+      </aside>
+      <aside class="panel">
+        <h2>Scene</h2>
+        <div class="list" id="sceneList">
+          <div class="card">
+            <strong>No asset loaded</strong>
+            <p>Load a glTF or glb file to inspect nodes and animations.</p>
+          </div>
         </div>
-        <div class="card" id="interactivityCard">
-          <strong>Extensions</strong>
-          <p>KHR_interactivity (supported)</p>
-          <p>KHR_node_visibility (supported)</p>
-          <p>KHR_node_selectability (supported)</p>
-          <p>KHR_node_hoverability (supported)</p>
-          <p>KHR_animation_pointer (supported)</p>
-        </div>
-      </div>
-    </aside>
+      </aside>
+    </div>
   </div>
 `;
 
@@ -116,6 +118,7 @@ const rendererStatus = document.querySelector<HTMLParagraphElement>("#rendererSt
 const rendererDetail = document.querySelector<HTMLParagraphElement>("#rendererDetail");
 const scenePanel = document.querySelector<HTMLDivElement>("#sceneList");
 const interactivityCard = document.querySelector<HTMLDivElement>("#interactivityCard");
+const interactivityStatus = document.querySelector<HTMLSpanElement>("#interactivityStatus");
 
 if (
   !canvas ||
@@ -343,7 +346,7 @@ const loadModelFiles = async (files: File[]) => {
   const json = doc.json;
   const ext = json.extensions?.KHR_interactivity;
   const graph = parseInteractivity(ext);
-  interactivityRuntime = graph ? new InteractivityRuntime(graph, json) : null;
+  interactivityRuntime = graph ? new InteractivityRuntime(graph, json, doc.binaryChunk ?? null) : null;
   const summary = summarizeInteractivity(graph);
   const scene = await buildRenderScene(doc, {
     fileMap: new Map(files.map((file) => [file.name, file]))
@@ -674,7 +677,7 @@ canvas.addEventListener("pointerdown", (event) => {
       const hit = pickNode(pendingScene, ray, "select");
       const nodeIndex = hit ? hit.nodeIndex : -1;
       const point = hit ? hit.point : [NaN, NaN, NaN];
-      interactivityRuntime.setSelection(nodeIndex, point as Vec3);
+      interactivityRuntime.setSelection(nodeIndex, point as Vec3, ray.origin as [number, number, number]);
       interactivityDirty = true;
     }
   }
@@ -729,6 +732,14 @@ const animationLoop = (time: number) => {
     interactivityRuntime.tick(delta);
     if (interactivityRuntime.consumeDirty()) {
       interactivityDirty = true;
+    }
+  }
+  if (interactivityStatus) {
+    if (interactivityRuntime) {
+      const info = interactivityRuntime.getDiagnostics();
+      interactivityStatus.textContent = `Interactivity: running (${info.nodes} nodes, last event: ${info.lastEvent})`;
+    } else {
+      interactivityStatus.textContent = "Interactivity: idle";
     }
   }
   if (renderer && pendingScene && (needsRefresh || interactivityDirty)) {

@@ -19,6 +19,7 @@ export class InteractivityRuntime {
   private adapter: SceneAdapter | null = null;
   private events: InteractivityEvent[] = [];
   private lastEvent: string = "none";
+  private lastHoverIndex = -1;
   private eventNodes: Map<string, number[]> = new Map();
   private dirty = false;
 
@@ -50,17 +51,37 @@ export class InteractivityRuntime {
   }
 
   setHover(nodeIndex: number, point: [number, number, number]) {
-    this.runtime.hoveredNodeIndex = nodeIndex;
+    const previous = this.lastHoverIndex;
+    if (nodeIndex === previous) {
+      return;
+    }
+    this.lastHoverIndex = nodeIndex;
     this.runtime.hoverPoint = [...point];
     this.lastEvent = "hover";
+    const prevChain = new Set(this.ancestorChain(previous));
+    const nextChain = new Set(this.ancestorChain(nodeIndex));
+    // Hover Out fires on handlers whose subtree the pointer left; Hover In on
+    // handlers whose subtree it entered (KHR_node_hoverability propagation).
+    if (previous >= 0) {
+      this.runtime.hoveredNodeIndex = previous;
+      this.triggerNodeEvent("event/onHoverOut", previous, (handlerNode) => !nextChain.has(handlerNode));
+    }
+    this.runtime.hoveredNodeIndex = nodeIndex;
+    if (nodeIndex >= 0) {
+      this.triggerNodeEvent("event/onHoverIn", nodeIndex, (handlerNode) => !prevChain.has(handlerNode));
+    }
+    // Legacy op used by earlier authored assets.
     this.triggerEvent("event/onHover");
   }
 
-  setSelection(nodeIndex: number, point: [number, number, number]) {
+  setSelection(nodeIndex: number, point: [number, number, number], rayOrigin?: [number, number, number]) {
     this.runtime.selectedNodeIndex = nodeIndex;
     this.runtime.selectionPoint = [...point];
+    this.runtime.selectionRayOrigin = rayOrigin ? [...rayOrigin] : [NaN, NaN, NaN];
     this.lastEvent = "select";
-    this.triggerEvent("event/onSelect");
+    if (nodeIndex >= 0) {
+      this.triggerNodeEvent("event/onSelect", nodeIndex, () => true);
+    }
   }
 
   start() {
@@ -124,6 +145,42 @@ export class InteractivityRuntime {
     }
     for (const nodeId of nodes) {
       executeFlow(this.runtime, nodeId, "in");
+    }
+  }
+
+  // Chain of glTF node indices from the given node up to the scene root
+  // (inclusive of the node itself). Uses the parent links prepareGltfData adds.
+  private ancestorChain(nodeIndex: number): number[] {
+    const chain: number[] = [];
+    let current = nodeIndex;
+    const nodes = (this.runtime.gltf as { nodes?: Array<{ parent?: number }> }).nodes ?? [];
+    while (current >= 0 && current < nodes.length && !chain.includes(current)) {
+      chain.push(current);
+      const parent = nodes[current]?.parent;
+      current = typeof parent === "number" ? parent : -1;
+    }
+    return chain;
+  }
+
+  // Fires interactivity event handlers whose configured nodeIndex is the hit
+  // node or one of its ancestors, deepest first (event bubbling per
+  // KHR_node_selectability / KHR_node_hoverability). `accept` lets hover
+  // transitions skip handlers whose subtree contained both hover targets.
+  private triggerNodeEvent(op: string, hitNodeIndex: number, accept: (handlerNodeIndex: number) => boolean) {
+    const handlers = this.eventNodes.get(op);
+    if (!handlers || handlers.length === 0) {
+      return;
+    }
+    const chain = this.ancestorChain(hitNodeIndex);
+    for (const target of chain) {
+      for (const handlerId of handlers) {
+        const node = this.graph.nodes[handlerId];
+        const raw = (node.configuration as Record<string, { value?: unknown[] }> | undefined)?.nodeIndex?.value?.[0];
+        const configured = typeof raw === "number" ? Math.trunc(raw) : -1;
+        if (configured === target && accept(configured)) {
+          executeFlow(this.runtime, handlerId, "in");
+        }
+      }
     }
   }
 
