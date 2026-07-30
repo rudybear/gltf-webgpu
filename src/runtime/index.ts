@@ -117,6 +117,26 @@ export class InteractivityRuntime {
     return dirty;
   }
 
+  getDebugState() {
+    const r = this.runtime as unknown as {
+      time: number;
+      tickCount: number;
+      lastTickDelta: number;
+      delays: unknown[];
+      pointerInterpolations: unknown[];
+      gltf?: { nodes?: Array<{ translation?: number[] }> };
+    };
+    return {
+      time: r.time,
+      tickCount: r.tickCount,
+      lastTickDelta: r.lastTickDelta,
+      delays: r.delays?.length,
+      pointerInterpolations: r.pointerInterpolations?.length,
+      node3: r.gltf?.nodes?.[3]?.translation ?? null,
+      node4: r.gltf?.nodes?.[4]?.translation ?? null
+    };
+  }
+
   getDiagnostics() {
     return {
       nodes: this.graph.nodes.length,

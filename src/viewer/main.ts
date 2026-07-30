@@ -615,6 +615,55 @@ const intersectRayAabb = (
   return tmin >= 0 ? tmin : tmax >= 0 ? tmax : null;
 };
 
+// Möller–Trumbore, double-sided; returns the nearest positive ray parameter.
+const intersectRayTriangles = (
+  origin: Vec3,
+  direction: Vec3,
+  positions: Float32Array,
+  indices?: Uint16Array | Uint32Array
+): number | null => {
+  let best: number | null = null;
+  const count = indices ? indices.length : positions.length / 3;
+  for (let i = 0; i + 2 < count; i += 3) {
+    const i0 = (indices ? indices[i] : i) * 3;
+    const i1 = (indices ? indices[i + 1] : i + 1) * 3;
+    const i2 = (indices ? indices[i + 2] : i + 2) * 3;
+    const e1x = positions[i1] - positions[i0];
+    const e1y = positions[i1 + 1] - positions[i0 + 1];
+    const e1z = positions[i1 + 2] - positions[i0 + 2];
+    const e2x = positions[i2] - positions[i0];
+    const e2y = positions[i2 + 1] - positions[i0 + 1];
+    const e2z = positions[i2 + 2] - positions[i0 + 2];
+    const px = direction[1] * e2z - direction[2] * e2y;
+    const py = direction[2] * e2x - direction[0] * e2z;
+    const pz = direction[0] * e2y - direction[1] * e2x;
+    const det = e1x * px + e1y * py + e1z * pz;
+    if (Math.abs(det) < 1e-9) {
+      continue;
+    }
+    const inv = 1 / det;
+    const tx = origin[0] - positions[i0];
+    const ty = origin[1] - positions[i0 + 1];
+    const tz = origin[2] - positions[i0 + 2];
+    const u = (tx * px + ty * py + tz * pz) * inv;
+    if (u < 0 || u > 1) {
+      continue;
+    }
+    const qx = ty * e1z - tz * e1y;
+    const qy = tz * e1x - tx * e1z;
+    const qz = tx * e1y - ty * e1x;
+    const v = (direction[0] * qx + direction[1] * qy + direction[2] * qz) * inv;
+    if (v < 0 || u + v > 1) {
+      continue;
+    }
+    const t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+    if (t > 1e-5 && (best === null || t < best)) {
+      best = t;
+    }
+  }
+  return best;
+};
+
 const pickNode = (
   scene: RenderScene,
   ray: Ray,
@@ -640,7 +689,12 @@ const pickNode = (
       }
       const originLocal = vec3TransformMat4(inv, ray.origin);
       const dirLocal = vec3Normalize(vec3TransformDirection(inv, ray.direction));
-      const hitT = intersectRayAabb(originLocal, dirLocal, bounds.min, bounds.max);
+      // Broad phase: bounding box. Narrow phase: actual triangles, so nodes
+      // whose boxes overlap (a button on a pole) resolve to the right mesh.
+      if (intersectRayAabb(originLocal, dirLocal, bounds.min, bounds.max) === null) {
+        continue;
+      }
+      const hitT = intersectRayTriangles(originLocal, dirLocal, primitive.positions, primitive.indices);
       if (hitT === null) {
         continue;
       }
@@ -868,6 +922,7 @@ window.__loadModel = async (url: string) => {
   return window.__lastLoad;
 };
 window.__rendererDiagnostics = () => renderer?.getDiagnostics() ?? null;
+(window as unknown as { __runtimeDebug?: () => unknown }).__runtimeDebug = () => interactivityRuntime?.getDebugState() ?? null;
 // Debug hook: report what a pick at normalized (x, y) would hit, plus the
 // world-space position of every node that owns a mesh primitive.
 (window as unknown as { __debugPick?: (x: number, y: number) => unknown }).__debugPick = (x: number, y: number) => {
