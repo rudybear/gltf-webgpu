@@ -14,6 +14,7 @@ import { parseInteractivity, summarizeInteractivity } from "../extensions/intera
 import { InteractivityRuntime } from "../runtime";
 import { initWebGpu } from "../shared/webgpu";
 import { OrbitCamera } from "../renderer/camera";
+import { mat4Invert, vec3Normalize, vec3TransformDirection, vec3TransformMat4, type Vec3 } from "../renderer/math";
 import { Renderer } from "../renderer/renderer";
 import fieldDiffuseUrl from "../assets/ibl/field/diffuse.ktx2?url";
 import fieldSpecularUrl from "../assets/ibl/field/specular.ktx2?url";
@@ -180,6 +181,7 @@ let iblEnabled = true;
 let iblIntensityValue = 1;
 let sheenBoostValue = 1;
 let interactivityDirty = false;
+let hoveredNodeIndex = -1;
 
 loadButton.addEventListener("click", () => fileInput.click());
 iblLoadButton.addEventListener("click", () => iblInput.click());
@@ -336,6 +338,147 @@ iblInput.addEventListener("change", async () => {
     iblInput.value = "";
   }
 });
+const loadModelFiles = async (files: File[]) => {
+  const doc = await loadGltfFromFiles(files);
+  const json = doc.json;
+  const ext = json.extensions?.KHR_interactivity;
+  const graph = parseInteractivity(ext);
+  interactivityRuntime = graph ? new InteractivityRuntime(graph, json) : null;
+  const summary = summarizeInteractivity(graph);
+  const scene = await buildRenderScene(doc, {
+    fileMap: new Map(files.map((file) => [file.name, file]))
+  });
+  const images = await loadImageBitmaps(doc, {
+    fileMap: new Map(files.map((file) => [file.name, file]))
+  });
+  pendingScene = scene;
+  pendingImages = images;
+  animationTime = 0;
+  lastFrameTime = performance.now();
+  if (scene.bounds) {
+    camera.setTarget(scene.bounds.center);
+    const radius = Math.max(0.01, scene.bounds.radius);
+    camera.setDistance(radius * 2.6);
+  }
+  if (renderer) {
+    renderer.setScene(scene, images);
+  }
+  if (interactivityRuntime) {
+    interactivityRuntime.bindAdapter({
+      applyPointer: (pointer, value) => {
+        const normalized = Array.isArray(value) ? value.map(Number) : [Number(value)];
+        if (applyInteractivityPointer(scene, pointer, normalized)) {
+          interactivityDirty = true;
+        }
+      },
+      setNodeVisibility: (nodeIndex, visible) => {
+        const node = scene.nodes[nodeIndex];
+        if (node) {
+          node.visible = visible;
+          interactivityDirty = true;
+        }
+      },
+      setNodeSelectable: (nodeIndex, selectable) => {
+        const node = scene.nodes[nodeIndex];
+        if (node) {
+          node.selectable = selectable;
+        }
+      },
+      setNodeHoverable: (nodeIndex, hoverable) => {
+        const node = scene.nodes[nodeIndex];
+        if (node) {
+          node.hoverable = hoverable;
+        }
+      }
+    });
+    interactivityRuntime.start();
+    interactivityDirty = true;
+  }
+
+  const instanceCount = scene.primitives.reduce(
+    (total, primitive) => total + (primitive.instances.length ? primitive.instances.length / 16 : 1),
+    0
+  );
+
+  const primaryFile = files.find((item) =>
+    item.name.toLowerCase().endsWith(".gltf") || item.name.toLowerCase().endsWith(".glb")
+  ) ?? files[0];
+
+  const materialRows = scene.materials.map((material, index) => {
+    const tex = material.baseColorTexture?.imageIndex ?? null;
+    const texLabel = tex === null ? "none" : `image ${tex}`;
+    return `<p>Material ${index + 1}: baseColor ${texLabel}</p>`;
+  }).join("");
+
+  const imageRows = images.map((image, index) => {
+    if (!image) {
+      return `<p>Image ${index}: failed</p>`;
+    }
+    return `<p>Image ${index}: ${image.width}x${image.height}</p>`;
+  }).join("");
+
+  scenePanel.innerHTML = `
+    <div class="card">
+      <strong>${primaryFile.name}</strong>
+      <p>Nodes: ${json.nodes?.length ?? 0}</p>
+      <p>Meshes: ${json.meshes?.length ?? 0}</p>
+      <p>Primitives: ${scene.primitives.length}</p>
+      <p>Instances: ${instanceCount}</p>
+      <p>Animations: ${scene.animations.length}</p>
+      <p>Extensions: ${(json.extensionsUsed ?? []).join(", ") || "none"}</p>
+      <p>Images: ${(json.images?.length ?? 0)}</p>
+      <p>Textures: ${(json.textures?.length ?? 0)}</p>
+      ${materialRows}
+      ${imageRows}
+      <p id="textureProbeText">${textureProbeText}</p>
+      <div id="imagePreview"></div>
+    </div>
+  `;
+
+  const preview = document.querySelector<HTMLDivElement>("#imagePreview");
+  if (preview && images[0]) {
+    const canvas = document.createElement("canvas");
+    const bitmap = images[0];
+    const scale = Math.min(1, 240 / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.floor(bitmap.width * scale);
+    canvas.height = Math.floor(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      preview.appendChild(canvas);
+    }
+  }
+
+  animationSelect.innerHTML = "";
+  if (scene.animations.length === 0) {
+    const option = document.createElement("option");
+    option.value = "0";
+    option.textContent = "No animations";
+    animationSelect.appendChild(option);
+    animationSelect.disabled = true;
+  } else {
+    scene.animations.forEach((animation, index) => {
+      const option = document.createElement("option");
+      option.value = `${index}`;
+      option.textContent = animation.name ?? `Animation ${index + 1}`;
+      animationSelect.appendChild(option);
+    });
+    animationSelect.disabled = false;
+    currentAnimationIndex = 0;
+  }
+
+  interactivityCard.innerHTML = `
+    <strong>KHR_interactivity</strong>
+    <p>Nodes: ${summary.nodes}</p>
+    <p>Edges: ${summary.edges}</p>
+    <p>Variables: ${summary.variables}</p>
+    <p>KHR_node_visibility: supported</p>
+    <p>KHR_node_selectability: supported</p>
+    <p>KHR_node_hoverability: supported</p>
+    <p>KHR_animation_pointer: supported</p>
+  `;
+};
+
 fileInput.addEventListener("change", async () => {
   const files = Array.from(fileInput.files ?? []);
   if (files.length === 0) {
@@ -343,144 +486,7 @@ fileInput.addEventListener("change", async () => {
   }
 
   try {
-    const doc = await loadGltfFromFiles(files);
-    const json = doc.json;
-    const ext = json.extensions?.KHR_interactivity;
-    const graph = parseInteractivity(ext);
-    interactivityRuntime = graph ? new InteractivityRuntime(graph, json) : null;
-    const summary = summarizeInteractivity(graph);
-    const scene = await buildRenderScene(doc, {
-      fileMap: new Map(files.map((file) => [file.name, file]))
-    });
-    const images = await loadImageBitmaps(doc, {
-      fileMap: new Map(files.map((file) => [file.name, file]))
-    });
-    pendingScene = scene;
-    pendingImages = images;
-    animationTime = 0;
-    lastFrameTime = performance.now();
-    if (scene.bounds) {
-      camera.setTarget(scene.bounds.center);
-      const radius = Math.max(0.01, scene.bounds.radius);
-      camera.setDistance(radius * 2.6);
-    }
-    if (renderer) {
-      renderer.setScene(scene, images);
-    }
-    if (interactivityRuntime) {
-      interactivityRuntime.bindAdapter({
-        applyPointer: (pointer, value) => {
-          const normalized = Array.isArray(value) ? value.map(Number) : [Number(value)];
-          if (applyInteractivityPointer(scene, pointer, normalized)) {
-            interactivityDirty = true;
-          }
-        },
-        setNodeVisibility: (nodeIndex, visible) => {
-          const node = scene.nodes[nodeIndex];
-          if (node) {
-            node.visible = visible;
-            interactivityDirty = true;
-          }
-        },
-        setNodeSelectable: (nodeIndex, selectable) => {
-          const node = scene.nodes[nodeIndex];
-          if (node) {
-            node.selectable = selectable;
-          }
-        },
-        setNodeHoverable: (nodeIndex, hoverable) => {
-          const node = scene.nodes[nodeIndex];
-          if (node) {
-            node.hoverable = hoverable;
-          }
-        }
-      });
-      interactivityRuntime.start();
-      interactivityDirty = true;
-    }
-
-    const instanceCount = scene.primitives.reduce(
-      (total, primitive) => total + (primitive.instances.length ? primitive.instances.length / 16 : 1),
-      0
-    );
-
-    const primaryFile = files.find((item) =>
-      item.name.toLowerCase().endsWith(".gltf") || item.name.toLowerCase().endsWith(".glb")
-    ) ?? files[0];
-
-    const materialRows = scene.materials.map((material, index) => {
-      const tex = material.baseColorTexture?.imageIndex ?? null;
-      const texLabel = tex === null ? "none" : `image ${tex}`;
-      return `<p>Material ${index + 1}: baseColor ${texLabel}</p>`;
-    }).join("");
-
-    const imageRows = images.map((image, index) => {
-      if (!image) {
-        return `<p>Image ${index}: failed</p>`;
-      }
-      return `<p>Image ${index}: ${image.width}x${image.height}</p>`;
-    }).join("");
-
-    scenePanel.innerHTML = `
-      <div class="card">
-        <strong>${primaryFile.name}</strong>
-        <p>Nodes: ${json.nodes?.length ?? 0}</p>
-        <p>Meshes: ${json.meshes?.length ?? 0}</p>
-        <p>Primitives: ${scene.primitives.length}</p>
-        <p>Instances: ${instanceCount}</p>
-        <p>Animations: ${scene.animations.length}</p>
-        <p>Extensions: ${(json.extensionsUsed ?? []).join(", ") || "none"}</p>
-        <p>Images: ${(json.images?.length ?? 0)}</p>
-        <p>Textures: ${(json.textures?.length ?? 0)}</p>
-        ${materialRows}
-        ${imageRows}
-        <p id="textureProbeText">${textureProbeText}</p>
-        <div id="imagePreview"></div>
-      </div>
-    `;
-
-    const preview = document.querySelector<HTMLDivElement>("#imagePreview");
-    if (preview && images[0]) {
-      const canvas = document.createElement("canvas");
-      const bitmap = images[0];
-      const scale = Math.min(1, 240 / Math.max(bitmap.width, bitmap.height));
-      canvas.width = Math.floor(bitmap.width * scale);
-      canvas.height = Math.floor(bitmap.height * scale);
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        preview.appendChild(canvas);
-      }
-    }
-
-    animationSelect.innerHTML = "";
-    if (scene.animations.length === 0) {
-      const option = document.createElement("option");
-      option.value = "0";
-      option.textContent = "No animations";
-      animationSelect.appendChild(option);
-      animationSelect.disabled = true;
-    } else {
-      scene.animations.forEach((animation, index) => {
-        const option = document.createElement("option");
-        option.value = `${index}`;
-        option.textContent = animation.name ?? `Animation ${index + 1}`;
-        animationSelect.appendChild(option);
-      });
-      animationSelect.disabled = false;
-      currentAnimationIndex = 0;
-    }
-
-    interactivityCard.innerHTML = `
-      <strong>KHR_interactivity</strong>
-      <p>Nodes: ${summary.nodes}</p>
-      <p>Edges: ${summary.edges}</p>
-      <p>Variables: ${summary.variables}</p>
-      <p>KHR_node_visibility: supported</p>
-      <p>KHR_node_selectability: supported</p>
-      <p>KHR_node_hoverability: supported</p>
-      <p>KHR_animation_pointer: supported</p>
-    `;
+    await loadModelFiles(files);
   } catch (err) {
     scenePanel.innerHTML = `
       <div class="card">
@@ -541,6 +547,120 @@ window.addEventListener("resize", resizeCanvas);
 const resizeObserver = new ResizeObserver(() => resizeCanvas());
 resizeObserver.observe(canvas);
 
+type Ray = { origin: Vec3; direction: Vec3 };
+
+const transformVec4 = (m: Float32Array, x: number, y: number, z: number, w: number): [number, number, number, number] => {
+  return [
+    m[0] * x + m[4] * y + m[8] * z + m[12] * w,
+    m[1] * x + m[5] * y + m[9] * z + m[13] * w,
+    m[2] * x + m[6] * y + m[10] * z + m[14] * w,
+    m[3] * x + m[7] * y + m[11] * z + m[15] * w
+  ];
+};
+
+const buildRayFromScreen = (x: number, y: number): Ray | null => {
+  const invViewProj = mat4Invert(camera.getViewProjection());
+  if (!invViewProj) {
+    return null;
+  }
+  const ndcX = x * 2 - 1;
+  const ndcY = 1 - y * 2;
+  const near = transformVec4(invViewProj, ndcX, ndcY, -1, 1);
+  const far = transformVec4(invViewProj, ndcX, ndcY, 1, 1);
+  const nearW = near[3] || 1;
+  const farW = far[3] || 1;
+  const nearPos: Vec3 = [near[0] / nearW, near[1] / nearW, near[2] / nearW];
+  const farPos: Vec3 = [far[0] / farW, far[1] / farW, far[2] / farW];
+  const dir = vec3Normalize([farPos[0] - nearPos[0], farPos[1] - nearPos[1], farPos[2] - nearPos[2]]);
+  return { origin: nearPos, direction: dir };
+};
+
+const intersectRayAabb = (
+  origin: Vec3,
+  direction: Vec3,
+  min: [number, number, number],
+  max: [number, number, number]
+): number | null => {
+  let tmin = -Infinity;
+  let tmax = Infinity;
+  for (let i = 0; i < 3; i += 1) {
+    const o = origin[i];
+    const d = direction[i];
+    const minVal = min[i];
+    const maxVal = max[i];
+    if (Math.abs(d) < 1e-6) {
+      if (o < minVal || o > maxVal) {
+        return null;
+      }
+      continue;
+    }
+    const inv = 1 / d;
+    let t1 = (minVal - o) * inv;
+    let t2 = (maxVal - o) * inv;
+    if (t1 > t2) {
+      const tmp = t1;
+      t1 = t2;
+      t2 = tmp;
+    }
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmax < tmin) {
+      return null;
+    }
+  }
+  return tmin >= 0 ? tmin : tmax >= 0 ? tmax : null;
+};
+
+const pickNode = (
+  scene: RenderScene,
+  ray: Ray,
+  mode: "hover" | "select"
+): { nodeIndex: number; point: Vec3 } | null => {
+  let best: { nodeIndex: number; point: Vec3; distance: number } | null = null;
+  for (const primitive of scene.primitives) {
+    const bounds = primitive.bounds;
+    for (const nodeIndex of primitive.nodeIndices) {
+      const node = scene.nodes[nodeIndex];
+      if (!node || !node.visible) {
+        continue;
+      }
+      if (mode === "select" && !node.selectable) {
+        continue;
+      }
+      if (mode === "hover" && !node.hoverable) {
+        continue;
+      }
+      const inv = mat4Invert(node.worldMatrix);
+      if (!inv) {
+        continue;
+      }
+      const originLocal = vec3TransformMat4(inv, ray.origin);
+      const dirLocal = vec3Normalize(vec3TransformDirection(inv, ray.direction));
+      const hitT = intersectRayAabb(originLocal, dirLocal, bounds.min, bounds.max);
+      if (hitT === null) {
+        continue;
+      }
+      const hitLocal: Vec3 = [
+        originLocal[0] + dirLocal[0] * hitT,
+        originLocal[1] + dirLocal[1] * hitT,
+        originLocal[2] + dirLocal[2] * hitT
+      ];
+      const hitWorld = vec3TransformMat4(node.worldMatrix, hitLocal);
+      const dx = hitWorld[0] - ray.origin[0];
+      const dy = hitWorld[1] - ray.origin[1];
+      const dz = hitWorld[2] - ray.origin[2];
+      const dist = Math.hypot(dx, dy, dz);
+      if (!best || dist < best.distance) {
+        best = { nodeIndex, point: hitWorld, distance: dist };
+      }
+    }
+  }
+  if (!best) {
+    return null;
+  }
+  return { nodeIndex: best.nodeIndex, point: best.point };
+};
+
 canvas.addEventListener("pointerdown", (event) => {
   canvas.setPointerCapture(event.pointerId);
   camera.onPointerDown(event.clientX, event.clientY);
@@ -548,6 +668,16 @@ canvas.addEventListener("pointerdown", (event) => {
   const x = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
   const y = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0;
   interactivityRuntime?.queueEvent({ type: "pointerdown", x, y });
+  if (pendingScene && interactivityRuntime) {
+    const ray = buildRayFromScreen(x, y);
+    if (ray) {
+      const hit = pickNode(pendingScene, ray, "select");
+      const nodeIndex = hit ? hit.nodeIndex : -1;
+      const point = hit ? hit.point : [NaN, NaN, NaN];
+      interactivityRuntime.setSelection(nodeIndex, point as Vec3);
+      interactivityDirty = true;
+    }
+  }
 });
 
 canvas.addEventListener("pointermove", (event) => {
@@ -556,6 +686,19 @@ canvas.addEventListener("pointermove", (event) => {
   const x = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0;
   const y = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0;
   interactivityRuntime?.queueEvent({ type: "pointermove", x, y });
+  if (pendingScene && interactivityRuntime) {
+    const ray = buildRayFromScreen(x, y);
+    if (ray) {
+      const hit = pickNode(pendingScene, ray, "hover");
+      const nextIndex = hit ? hit.nodeIndex : -1;
+      if (nextIndex !== hoveredNodeIndex) {
+        hoveredNodeIndex = nextIndex;
+        const point = hit ? hit.point : [NaN, NaN, NaN];
+        interactivityRuntime.setHover(hoveredNodeIndex, point as Vec3);
+        interactivityDirty = true;
+      }
+    }
+  }
 });
 
 canvas.addEventListener("pointerup", (event) => {
@@ -582,6 +725,7 @@ const animationLoop = (time: number) => {
     needsRefresh = true;
   }
   if (interactivityRuntime) {
+    interactivityRuntime.setActiveCamera(camera.getEyePosition(), camera.getRotation());
     interactivityRuntime.tick(delta);
     if (interactivityRuntime.consumeDirty()) {
       interactivityDirty = true;
@@ -600,3 +744,64 @@ const animationLoop = (time: number) => {
 };
 
 requestAnimationFrame(animationLoop);
+
+// Automation hook: load a model from a URL (e.g. viewer.html?model=/external/...).
+// External .gltf resources are fetched relative to the model URL and fed through
+// the same fileMap path the file-input flow uses.
+const loadModelFromUrl = async (url: string) => {
+  const slash = url.lastIndexOf("/");
+  const base = url.slice(0, slash + 1);
+  const name = decodeURIComponent(url.slice(slash + 1));
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch model: ${response.status}`);
+  }
+  if (name.toLowerCase().endsWith(".glb")) {
+    await loadModelFiles([new File([await response.arrayBuffer()], name)]);
+    return;
+  }
+  const text = await response.text();
+  const json = JSON.parse(text) as { buffers?: Array<{ uri?: string }>; images?: Array<{ uri?: string }> };
+  const uris = new Set<string>();
+  for (const item of [...(json.buffers ?? []), ...(json.images ?? [])]) {
+    if (item.uri && !item.uri.startsWith("data:")) {
+      uris.add(item.uri);
+    }
+  }
+  const files: File[] = [new File([text], name)];
+  await Promise.all([...uris].map(async (uri) => {
+    const res = await fetch(base + uri);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch resource ${uri}: ${res.status}`);
+    }
+    files.push(new File([await res.arrayBuffer()], uri));
+  }));
+  await loadModelFiles(files);
+};
+
+type HarnessLoadResult = { status: "ok" | "error"; error: string | null };
+
+declare global {
+  interface Window {
+    __loadModel?: (url: string) => Promise<HarnessLoadResult>;
+    __lastLoad?: HarnessLoadResult | null;
+    __rendererDiagnostics?: () => unknown;
+  }
+}
+
+window.__loadModel = async (url: string) => {
+  window.__lastLoad = null;
+  try {
+    await loadModelFromUrl(url);
+    window.__lastLoad = { status: "ok", error: null };
+  } catch (err) {
+    window.__lastLoad = { status: "error", error: err instanceof Error ? err.message : String(err) };
+  }
+  return window.__lastLoad;
+};
+window.__rendererDiagnostics = () => renderer?.getDiagnostics() ?? null;
+
+const modelParam = new URLSearchParams(window.location.search).get("model");
+if (modelParam) {
+  void window.__loadModel(modelParam);
+}

@@ -22,7 +22,7 @@ export class InteractivityRuntime {
   private eventNodes: Map<string, number[]> = new Map();
   private dirty = false;
 
-  constructor(graph: InteractivityGraph, gltf: unknown) {
+  constructor(graph: InteractivityGraph, gltf: unknown, binary?: Uint8Array | ArrayBuffer | null) {
     if (!graph) {
       throw new Error("Missing KHR_interactivity graph.");
     }
@@ -34,13 +34,33 @@ export class InteractivityRuntime {
       },
       onDirty: () => {
         this.dirty = true;
-      }
+      },
+      binary
     });
     this.buildEventIndex();
   }
 
   bindAdapter(adapter: SceneAdapter) {
     this.adapter = adapter;
+  }
+
+  setActiveCamera(position: [number, number, number], rotation: [number, number, number, number]) {
+    this.runtime.activeCameraPosition = [...position];
+    this.runtime.activeCameraRotation = [...rotation];
+  }
+
+  setHover(nodeIndex: number, point: [number, number, number]) {
+    this.runtime.hoveredNodeIndex = nodeIndex;
+    this.runtime.hoverPoint = [...point];
+    this.lastEvent = "hover";
+    this.triggerEvent("event/onHover");
+  }
+
+  setSelection(nodeIndex: number, point: [number, number, number]) {
+    this.runtime.selectedNodeIndex = nodeIndex;
+    this.runtime.selectionPoint = [...point];
+    this.lastEvent = "select";
+    this.triggerEvent("event/onSelect");
   }
 
   start() {
@@ -52,8 +72,9 @@ export class InteractivityRuntime {
   }
 
   tick(dtSeconds: number) {
+    // advanceTime fires event/onTick flows itself when dtSeconds > 0 (and
+    // maintains tickCount / timeSinceLastTick), so no explicit trigger here.
     advanceTime(this.runtime, dtSeconds);
-    this.triggerEvent("event/onTick");
     while (this.events.length > 0) {
       const event = this.events.shift();
       if (!event) {
