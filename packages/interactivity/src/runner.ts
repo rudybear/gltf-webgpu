@@ -6,7 +6,8 @@ import {
   type TestEntry
 } from "./runtime.js";
 
-const ROOT = "E:\\glTF-Test-Assets-Interactivity\\Tests\\Interactivity";
+const ROOT = process.env.INTERACTIVITY_TESTS_ROOT
+  ?? path.resolve(import.meta.dirname, "../../../external/glTF-Test-Assets-Interactivity/Tests/Interactivity");
 
 function readJson(filePath: string) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -51,7 +52,12 @@ function main() {
   const tests = gatherTests();
   let failures = 0;
   for (const test of tests) {
-    const result = evaluateTest(test);
+    let result;
+    try {
+      result = evaluateTest(test);
+    } catch (err) {
+      result = { ok: false, failures: [`runner crash: ${err instanceof Error ? err.message : String(err)}`] };
+    }
     if (!result.ok) {
       failures += 1;
       console.error(`FAIL ${test.name}`);
