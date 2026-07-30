@@ -185,6 +185,7 @@ let iblIntensityValue = 1;
 let sheenBoostValue = 1;
 let interactivityDirty = false;
 let hoveredNodeIndex = -1;
+let lastPickInfo = "none";
 
 loadButton.addEventListener("click", () => fileInput.click());
 iblLoadButton.addEventListener("click", () => iblInput.click());
@@ -659,7 +660,60 @@ const pickNode = (
     }
   }
   if (!best) {
-    return null;
+    // Forgiving fallback for small or moving targets: accept the node whose
+    // bounding sphere passes closest to the ray, within a modest slop factor.
+    let near: { nodeIndex: number; point: Vec3; miss: number } | null = null;
+    for (const primitive of scene.primitives) {
+      const bounds = primitive.bounds;
+      const localCenter: Vec3 = [
+        (bounds.min[0] + bounds.max[0]) / 2,
+        (bounds.min[1] + bounds.max[1]) / 2,
+        (bounds.min[2] + bounds.max[2]) / 2
+      ];
+      const localRadius = Math.hypot(
+        bounds.max[0] - bounds.min[0],
+        bounds.max[1] - bounds.min[1],
+        bounds.max[2] - bounds.min[2]
+      ) / 2;
+      for (const nodeIndex of primitive.nodeIndices) {
+        const node = scene.nodes[nodeIndex];
+        if (!node || !node.visible) {
+          continue;
+        }
+        if (mode === "select" && !node.selectable) {
+          continue;
+        }
+        if (mode === "hover" && !node.hoverable) {
+          continue;
+        }
+        const center = vec3TransformMat4(node.worldMatrix, localCenter);
+        const scale = Math.max(
+          Math.hypot(node.worldMatrix[0], node.worldMatrix[1], node.worldMatrix[2]),
+          Math.hypot(node.worldMatrix[4], node.worldMatrix[5], node.worldMatrix[6]),
+          Math.hypot(node.worldMatrix[8], node.worldMatrix[9], node.worldMatrix[10])
+        );
+        const radius = localRadius * scale;
+        const toCenter: Vec3 = [
+          center[0] - ray.origin[0],
+          center[1] - ray.origin[1],
+          center[2] - ray.origin[2]
+        ];
+        const along = toCenter[0] * ray.direction[0] + toCenter[1] * ray.direction[1] + toCenter[2] * ray.direction[2];
+        if (along <= 0) {
+          continue;
+        }
+        const closest: Vec3 = [
+          ray.origin[0] + ray.direction[0] * along,
+          ray.origin[1] + ray.direction[1] * along,
+          ray.origin[2] + ray.direction[2] * along
+        ];
+        const miss = Math.hypot(closest[0] - center[0], closest[1] - center[1], closest[2] - center[2]);
+        if (miss <= radius * 1.5 && (!near || miss < near.miss)) {
+          near = { nodeIndex, point: closest, miss };
+        }
+      }
+    }
+    return near ? { nodeIndex: near.nodeIndex, point: near.point } : null;
   }
   return { nodeIndex: best.nodeIndex, point: best.point };
 };
@@ -677,6 +731,9 @@ canvas.addEventListener("pointerdown", (event) => {
       const hit = pickNode(pendingScene, ray, "select");
       const nodeIndex = hit ? hit.nodeIndex : -1;
       const point = hit ? hit.point : [NaN, NaN, NaN];
+      const hitName = hit ? (pendingScene.json.nodes?.[hit.nodeIndex] as { name?: string } | undefined)?.name : undefined;
+      lastPickInfo = hit ? `node ${hit.nodeIndex}${hitName ? ` (${hitName})` : ""}` : "miss";
+      console.log(`[pick] ${lastPickInfo}`, { x, y, point });
       interactivityRuntime.setSelection(nodeIndex, point as Vec3, ray.origin as [number, number, number]);
       interactivityDirty = true;
     }
@@ -737,7 +794,7 @@ const animationLoop = (time: number) => {
   if (interactivityStatus) {
     if (interactivityRuntime) {
       const info = interactivityRuntime.getDiagnostics();
-      interactivityStatus.textContent = `Interactivity: running (${info.nodes} nodes, last event: ${info.lastEvent})`;
+      interactivityStatus.textContent = `Interactivity: running (${info.nodes} nodes, last event: ${info.lastEvent}, last pick: ${lastPickInfo})`;
     } else {
       interactivityStatus.textContent = "Interactivity: idle";
     }
@@ -811,6 +868,38 @@ window.__loadModel = async (url: string) => {
   return window.__lastLoad;
 };
 window.__rendererDiagnostics = () => renderer?.getDiagnostics() ?? null;
+// Debug hook: report what a pick at normalized (x, y) would hit, plus the
+// world-space position of every node that owns a mesh primitive.
+(window as unknown as { __debugPick?: (x: number, y: number) => unknown }).__debugPick = (x: number, y: number) => {
+  if (!pendingScene) {
+    return null;
+  }
+  const ray = buildRayFromScreen(x, y);
+  const hit = ray ? pickNode(pendingScene, ray, "select") : null;
+  const viewProj = camera.getViewProjection();
+  const project = (px: number, py: number, pz: number) => {
+    const clip = transformVec4(viewProj, px, py, pz, 1);
+    const w = clip[3] || 1;
+    return [(clip[0] / w + 1) / 2, (1 - clip[1] / w) / 2];
+  };
+  const nodes: Record<number, unknown> = {};
+  for (const primitive of pendingScene.primitives) {
+    for (const nodeIndex of primitive.nodeIndices) {
+      const node = pendingScene.nodes[nodeIndex];
+      if (node) {
+        const world = [node.worldMatrix[12], node.worldMatrix[13], node.worldMatrix[14]] as const;
+        nodes[nodeIndex] = {
+          world,
+          screen: project(world[0], world[1], world[2]),
+          visible: node.visible,
+          selectable: node.selectable,
+          bounds: primitive.bounds
+        };
+      }
+    }
+  }
+  return { ray, hit, nodes };
+};
 
 const modelParam = new URLSearchParams(window.location.search).get("model");
 if (modelParam) {

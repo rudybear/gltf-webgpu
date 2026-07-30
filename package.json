@@ -12,6 +12,7 @@
   "devDependencies": {
     "@types/node": "^22.5.2",
     "@webgpu/types": "^0.1.44",
+    "pngjs": "^7.0.0",
     "puppeteer-core": "^25.4.0",
     "typescript": "^5.5.4",
     "vite": "^5.4.2"
