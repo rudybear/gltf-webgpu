@@ -373,7 +373,10 @@ export class Renderer {
 
       if (primitive.indices) {
         indexBuffer = device.createBuffer({
-          size: primitive.indices.byteLength,
+          // writeBufferAligned pads writes to 4-byte multiples; the buffer
+          // must be at least that large or the padded write is rejected,
+          // which invalidates the whole frame.
+          size: Math.ceil(primitive.indices.byteLength / 4) * 4,
           usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST
         });
         this.writeBufferAligned(indexBuffer, primitive.indices);

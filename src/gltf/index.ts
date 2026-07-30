@@ -278,6 +278,7 @@ export type RenderPrimitive = {
   uvs: Float32Array<ArrayBufferLike>;
   uvs1: Float32Array<ArrayBufferLike>;
   indices?: Uint16Array | Uint32Array;
+  bounds: { min: [number, number, number]; max: [number, number, number] };
   instances: Float32Array<ArrayBufferLike>;
   materialIndex: number;
   meshIndex: number;
@@ -602,6 +603,7 @@ export async function buildRenderScene(doc: GltfDocument, options: GltfOptions =
         uvs,
         uvs1,
         indices,
+        bounds: computeBoundsFromPositions(positions),
         instances: new Float32Array(),
         materialIndex: primitive.material ?? 0,
         meshIndex,
@@ -726,11 +728,8 @@ async function resolveBuffers(doc: GltfDocument, fileMap?: Map<string, File>): P
       continue;
     }
 
-    if (fileMap?.has(bufferDef.uri)) {
-      const file = fileMap.get(bufferDef.uri);
-      if (!file) {
-        throw new Error(`Missing external buffer: ${bufferDef.uri}`);
-      }
+    const file = lookupExternalFile(fileMap, bufferDef.uri);
+    if (file) {
       resolved.push(await file.arrayBuffer());
       continue;
     }
@@ -739,6 +738,36 @@ async function resolveBuffers(doc: GltfDocument, fileMap?: Map<string, File>): P
   }
 
   return resolved;
+}
+
+// glTF URIs may be percent-encoded or carry a leading "./", while fileMaps
+// built from drag-and-drop or directory listings are keyed by plain names.
+// Try progressively normalized spellings before giving up.
+function lookupExternalFile(fileMap: Map<string, File> | undefined, uri: string): File | undefined {
+  if (!fileMap) {
+    return undefined;
+  }
+  const candidates = new Set<string>([uri]);
+  try {
+    candidates.add(decodeURIComponent(uri));
+  } catch {
+    // Malformed percent-encoding; fall through with the raw URI.
+  }
+  for (const candidate of [...candidates]) {
+    const stripped = candidate.replace(/^\.\//, "");
+    candidates.add(stripped);
+    const basename = stripped.split("/").pop();
+    if (basename) {
+      candidates.add(basename);
+    }
+  }
+  for (const key of candidates) {
+    const file = fileMap.get(key);
+    if (file) {
+      return file;
+    }
+  }
+  return undefined;
 }
 
 function decodeDataUri(uri: string): ArrayBuffer {
@@ -779,7 +808,7 @@ function readAccessorFloat32(
   const componentSize = componentTypeSize(accessor.componentType);
   const byteStride = bufferView.byteStride ?? componentCount * componentSize;
   const byteOffset = (bufferView.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
-  const view = new DataView(buffers[bufferView.buffer], byteOffset, accessor.count * byteStride);
+  const view = new DataView(buffers[bufferView.buffer], byteOffset, accessorByteLength(accessor.count, byteStride, componentCount * componentSize));
   const out = new Float32Array(accessor.count * componentCount);
 
   for (let i = 0; i < accessor.count; i += 1) {
@@ -821,6 +850,15 @@ function readAccessorIndices(
     return new Uint32Array(buffers[bufferView.buffer], byteOffset, accessor.count);
   }
   throw new Error("Unsupported index component type.");
+}
+
+// The last element of a strided accessor only occupies elementSize bytes, so
+// the readable range is (count - 1) * stride + elementSize, not count * stride.
+function accessorByteLength(count: number, byteStride: number, elementSize: number): number {
+  if (count === 0) {
+    return 0;
+  }
+  return (count - 1) * byteStride + elementSize;
 }
 
 function getBufferView(accessor: GltfAccessor, bufferViews: GltfBufferView[]): GltfBufferView {
@@ -1319,7 +1357,7 @@ async function resolveImageBlob(
     if (image.uri.startsWith("data:")) {
       return decodeDataUriToBlob(image.uri);
     }
-    const file = fileMap?.get(image.uri);
+    const file = lookupExternalFile(fileMap, image.uri);
     if (!file) {
       throw new Error(`Missing image file: ${image.uri}`);
     }
@@ -1723,6 +1761,7 @@ function clonePrimitive(primitive: RenderPrimitive): RenderPrimitive {
     uvs: primitive.uvs,
     uvs1: primitive.uvs1,
     indices: primitive.indices,
+    bounds: primitive.bounds,
     instances: primitive.instances,
     materialIndex: primitive.materialIndex,
     meshIndex: primitive.meshIndex,
@@ -1812,7 +1851,7 @@ function readAccessorUint16(
   const componentSize = componentTypeSize(accessor.componentType);
   const byteStride = bufferView.byteStride ?? componentCount * componentSize;
   const byteOffset = (bufferView.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
-  const view = new DataView(buffers[bufferView.buffer], byteOffset, accessor.count * byteStride);
+  const view = new DataView(buffers[bufferView.buffer], byteOffset, accessorByteLength(accessor.count, byteStride, componentCount * componentSize));
   const out = new Uint16Array(accessor.count * componentCount);
   for (let i = 0; i < accessor.count; i += 1) {
     const elementOffset = i * byteStride;
