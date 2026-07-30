@@ -1,5 +1,9 @@
 dist/
 node_modules/
+external/
+reports/*
+!reports/EXTENSION-COVERAGE.md
+tmp_interactivity_spec.adoc
 tsconfig.tsbuildinfo
 packages/**/dist/
 packages/**/node_modules/
