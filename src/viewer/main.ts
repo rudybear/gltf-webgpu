@@ -917,11 +917,12 @@ const animationLoop = (time: number) => {
     audioSystem.update(delta, camera.getEyePosition(), camera.getRotation(), pendingScene.nodes);
   }
   if (interactivityStatus) {
+    const audioInfo = audioSystem && audioEnabled ? ` | ${audioSystem.getDiagnostics()}` : "";
     if (interactivityRuntime) {
       const info = interactivityRuntime.getDiagnostics();
-      interactivityStatus.textContent = `Interactivity: running (${info.nodes} nodes, last event: ${info.lastEvent}, last pick: ${lastPickInfo})`;
+      interactivityStatus.textContent = `Interactivity: running (${info.nodes} nodes, last event: ${info.lastEvent}, last pick: ${lastPickInfo})${audioInfo}`;
     } else {
-      interactivityStatus.textContent = "Interactivity: idle";
+      interactivityStatus.textContent = `Interactivity: idle${audioInfo}`;
     }
   }
   if (renderer && pendingScene && (needsRefresh || interactivityDirty)) {

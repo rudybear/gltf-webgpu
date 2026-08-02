@@ -139,6 +139,7 @@ export class AudioSystem {
   private listenerDef: ListenerDef | undefined;
   private previousListenerPosition: Vec3 | null = null;
   private started = false;
+  private lastTrigger = "none";
 
   constructor(json: unknown, options: AudioSystemOptions) {
     this.json = json;
@@ -181,6 +182,33 @@ export class AudioSystem {
     await this.decodeAudioData(emitterExt.audio ?? []);
     this.buildEmitterInstances(emitterExt);
     this.started = true;
+    console.info(
+      `KHR_audio: started — context=${context.state}, sampleRate=${context.sampleRate}, ` +
+      `buffers=${this.buffers.size}/${(emitterExt.audio ?? []).length}, ` +
+      `emitters=${this.emitterInstances.length}, environments=${this.environmentBuses.size}, zones=${this.zones.length}`
+    );
+    if (context.state !== "running") {
+      console.warn(`KHR_audio: AudioContext is "${context.state}" — attempting resume()`);
+      void context.resume();
+    }
+    // Audible confirmation blip through the listener bus: if you hear this,
+    // the output path works and any remaining silence is asset/trigger-side.
+    const blip = context.createOscillator();
+    blip.frequency.value = 880;
+    const blipGain = context.createGain();
+    blipGain.gain.value = 0.08;
+    blipGain.gain.setTargetAtTime(0, context.currentTime + 0.06, 0.02);
+    blip.connect(blipGain);
+    blipGain.connect(this.listenerBus!);
+    blip.start();
+    blip.stop(context.currentTime + 0.25);
+  }
+
+  getDiagnostics(): string {
+    if (!this.started || !this.context) {
+      return "audio idle";
+    }
+    return `audio ${this.context.state}, ${this.buffers.size} buffers, ${this.emitterInstances.length} emitters, last trigger: ${this.lastTrigger}`;
   }
 
   dispose(): void {
@@ -376,7 +404,9 @@ export class AudioSystem {
     // true (re)fires the source on every emitter that references it.
     match = pointer.match(/^\/extensions\/KHR_audio_emitter\/sources\/(\d+)\/playing$/);
     if (match) {
-      this.triggerSource(Number(match[1]), scalar > 0.5);
+      const fired = this.triggerSource(Number(match[1]), scalar > 0.5);
+      this.lastTrigger = `source ${match[1]} (${fired} voices)`;
+      console.debug(`KHR_audio: trigger source ${match[1]} -> ${fired} voice(s)`);
       return true;
     }
     match = pointer.match(/^\/extensions\/KHR_audio_emitter\/sources\/(\d+)\/(gain|playbackRate)$/);
@@ -428,14 +458,19 @@ export class AudioSystem {
   }
 
   /** (Re)fire or stop every instance of a source — one-shot drum-pad semantics. */
-  private triggerSource(sourceIndex: number, play: boolean): void {
+  private triggerSource(sourceIndex: number, play: boolean): number {
     const context = this.context!;
+    let fired = 0;
     const sources = (this.json.extensions?.KHR_audio_emitter?.sources ?? []) as SourceDef[];
     const def = sources[sourceIndex];
     if (!def || typeof def.audio !== "number") {
-      return;
+      console.warn(`KHR_audio: trigger for unknown source ${sourceIndex}`);
+      return fired;
     }
     const buffer = this.buffers.get(def.audio);
+    if (play && !buffer) {
+      console.warn(`KHR_audio: source ${sourceIndex} has no decoded buffer (audio[${def.audio}])`);
+    }
     for (const instance of this.emitterInstances) {
       if (!(instance.def.sources ?? []).includes(sourceIndex)) {
         continue;
@@ -464,6 +499,7 @@ export class AudioSystem {
         node.connect(gain);
         gain.connect(instance.input);
         node.start();
+        fired += 1;
         instance.sources.push({ sourceIndex, node, gain, basePlaybackRate });
         node.onended = () => {
           const at = instance.sources.findIndex((s) => s.node === node);
@@ -474,6 +510,7 @@ export class AudioSystem {
         };
       }
     }
+    return fired;
   }
 
   // -------------------------------------------------------------------------
