@@ -188,8 +188,28 @@ export class AudioSystem {
       `emitters=${this.emitterInstances.length}, environments=${this.environmentBuses.size}, zones=${this.zones.length}`
     );
     if (context.state !== "running") {
-      console.warn(`KHR_audio: AudioContext is "${context.state}" — attempting resume()`);
-      void context.resume();
+      try {
+        await context.resume();
+      } catch {
+        // fall through to input-driven resume
+      }
+    }
+    if ((context.state as string) !== "running") {
+      console.warn(
+        `KHR_audio: AudioContext is "${context.state}" — will retry on the next click/keypress. ` +
+        `Firefox: allow autoplay for this site (address-bar permissions icon -> Autoplay -> Allow Audio and Video).`
+      );
+      const resumeOnInput = () => {
+        void context.resume().then(() => {
+          if ((context.state as string) === "running") {
+            console.info("KHR_audio: AudioContext resumed");
+            window.removeEventListener("pointerdown", resumeOnInput);
+            window.removeEventListener("keydown", resumeOnInput);
+          }
+        });
+      };
+      window.addEventListener("pointerdown", resumeOnInput);
+      window.addEventListener("keydown", resumeOnInput);
     }
     // Audible confirmation blip through the listener bus: if you hear this,
     // the output path works and any remaining silence is asset/trigger-side.
