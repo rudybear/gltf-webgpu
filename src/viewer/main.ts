@@ -11,6 +11,7 @@ import {
   type RenderScene
 } from "../gltf";
 import { parseInteractivity, summarizeInteractivity } from "../extensions/interactivity";
+import { AudioSystem } from "../extensions/audio";
 import { InteractivityRuntime } from "../runtime";
 import { initWebGpu } from "../shared/webgpu";
 import { OrbitCamera } from "../renderer/camera";
@@ -32,6 +33,7 @@ app.innerHTML = `
       <div class="toolbar">
         <button class="primary" id="loadButton">Load glTF/glb</button>
         <button id="resetButton">Reset View</button>
+        <button id="audioButton" disabled>Audio: n/a</button>
       </div>
     </header>
     <section class="panel workspace">
@@ -119,6 +121,7 @@ const rendererDetail = document.querySelector<HTMLParagraphElement>("#rendererDe
 const scenePanel = document.querySelector<HTMLDivElement>("#sceneList");
 const interactivityCard = document.querySelector<HTMLDivElement>("#interactivityCard");
 const interactivityStatus = document.querySelector<HTMLSpanElement>("#interactivityStatus");
+const audioButton = document.querySelector<HTMLButtonElement>("#audioButton");
 
 if (
   !canvas ||
@@ -143,7 +146,8 @@ if (
   !iblIntensity ||
   !sheenBoost ||
   !scenePanel ||
-  !interactivityCard
+  !interactivityCard ||
+  !audioButton
 ) {
   throw new Error("Missing viewer UI elements.");
 }
@@ -186,6 +190,33 @@ let sheenBoostValue = 1;
 let interactivityDirty = false;
 let hoveredNodeIndex = -1;
 let lastPickInfo = "none";
+let audioSystem: AudioSystem | null = null;
+let audioEnabled = false;
+
+const updateAudioButton = () => {
+  if (!audioSystem) {
+    audioButton.textContent = "Audio: n/a";
+    audioButton.disabled = true;
+    return;
+  }
+  audioButton.disabled = false;
+  audioButton.textContent = audioEnabled ? "Audio On" : "Audio Off";
+};
+
+audioButton.addEventListener("click", async () => {
+  if (!audioSystem) {
+    return;
+  }
+  // start() must run inside this click handler (browser autoplay policy).
+  if (!audioEnabled) {
+    await audioSystem.start();
+    audioEnabled = true;
+  } else {
+    audioSystem.dispose();
+    audioEnabled = false;
+  }
+  updateAudioButton();
+});
 
 loadButton.addEventListener("click", () => fileInput.click());
 iblLoadButton.addEventListener("click", () => iblInput.click());
@@ -349,6 +380,40 @@ const loadModelFiles = async (files: File[]) => {
   const graph = parseInteractivity(ext);
   interactivityRuntime = graph ? new InteractivityRuntime(graph, json, doc.binaryChunk ?? null) : null;
   const summary = summarizeInteractivity(graph);
+
+  // KHR_audio_emitter / KHR_audio_environment
+  audioSystem?.dispose();
+  audioSystem = null;
+  audioEnabled = false;
+  if (AudioSystem.hasAudio(json)) {
+    const audioFileMap = new Map(files.map((file) => [file.name, file]));
+    audioSystem = new AudioSystem(json, {
+      resolveUri: async (uri) => {
+        if (uri.startsWith("data:")) {
+          const response = await fetch(uri);
+          return response.arrayBuffer();
+        }
+        const candidates = [uri, decodeURIComponent(uri), uri.replace(/^\.\//, ""), uri.split("/").pop() ?? uri];
+        for (const candidate of candidates) {
+          const file = audioFileMap.get(candidate);
+          if (file) {
+            return file.arrayBuffer();
+          }
+        }
+        throw new Error(`Audio resource not found: ${uri}`);
+      },
+      getBufferView: (index) => {
+        const view = (json as { bufferViews?: Array<{ buffer: number; byteOffset?: number; byteLength: number }> }).bufferViews?.[index];
+        // Prototype limitation: bufferView audio only for the GLB binary chunk.
+        if (!view || view.buffer !== 0 || !doc.binaryChunk) {
+          return undefined;
+        }
+        const offset = view.byteOffset ?? 0;
+        return doc.binaryChunk.slice(offset, offset + view.byteLength);
+      }
+    });
+  }
+  updateAudioButton();
   const scene = await buildRenderScene(doc, {
     fileMap: new Map(files.map((file) => [file.name, file]))
   });
@@ -371,6 +436,9 @@ const loadModelFiles = async (files: File[]) => {
     interactivityRuntime.bindAdapter({
       applyPointer: (pointer, value) => {
         const normalized = Array.isArray(value) ? value.map(Number) : [Number(value)];
+        if (audioSystem?.applyPointer(pointer, normalized)) {
+          return;
+        }
         if (applyInteractivityPointer(scene, pointer, normalized)) {
           interactivityDirty = true;
         }
@@ -845,6 +913,9 @@ const animationLoop = (time: number) => {
       interactivityDirty = true;
     }
   }
+  if (audioSystem && audioEnabled && pendingScene) {
+    audioSystem.update(delta, camera.getEyePosition(), camera.getRotation(), pendingScene.nodes);
+  }
   if (interactivityStatus) {
     if (interactivityRuntime) {
       const info = interactivityRuntime.getDiagnostics();
@@ -883,9 +954,14 @@ const loadModelFromUrl = async (url: string) => {
     return;
   }
   const text = await response.text();
-  const json = JSON.parse(text) as { buffers?: Array<{ uri?: string }>; images?: Array<{ uri?: string }> };
+  const json = JSON.parse(text) as {
+    buffers?: Array<{ uri?: string }>;
+    images?: Array<{ uri?: string }>;
+    extensions?: { KHR_audio_emitter?: { audio?: Array<{ uri?: string }> } };
+  };
   const uris = new Set<string>();
-  for (const item of [...(json.buffers ?? []), ...(json.images ?? [])]) {
+  const audioItems = json.extensions?.KHR_audio_emitter?.audio ?? [];
+  for (const item of [...(json.buffers ?? []), ...(json.images ?? []), ...audioItems]) {
     if (item.uri && !item.uri.startsWith("data:")) {
       uris.add(item.uri);
     }
