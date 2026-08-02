@@ -108,6 +108,63 @@ interface EnvironmentBus {
 
 const RAD_TO_DEG = 180 / Math.PI;
 
+/**
+ * Synthesize a stereo impulse response from the resolved parametric reverb
+ * values: sparse early-reflection taps after reflectionsDelay, then an
+ * exponentially decaying noise tail (RT60 = decayTime) low-passed per
+ * decayHFRatio. ConvolverNode's default equal-power normalization keeps the
+ * output level consistent across presets.
+ */
+function generateReverbImpulse(
+  context: BaseAudioContext,
+  params: {
+    decayTime: number;
+    decayHFRatio: number;
+    reflectionsGain: number;
+    reflectionsDelay: number;
+    reverbGain: number;
+    reverbDelay: number;
+    diffusion: number;
+    density: number;
+  }
+): AudioBuffer {
+  const rate = context.sampleRate;
+  const tailStart = params.reflectionsDelay + params.reverbDelay;
+  const length = Math.max(rate * 0.05, Math.floor(rate * (tailStart + params.decayTime)));
+  const buffer = context.createBuffer(2, length, rate);
+  const decayRate = 6.908 / Math.max(params.decayTime, 0.05); // -60 dB over decayTime
+  const cutoff = Math.min(Math.max(20000 * params.decayHFRatio, 200), rate * 0.45);
+  const alpha = 1 - Math.exp((-2 * Math.PI * cutoff) / rate);
+  // density thins the tail's sample occupancy; diffusion smooths tap polarity.
+  const occupancy = 0.3 + 0.7 * params.density;
+
+  for (let channel = 0; channel < 2; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    // Early reflections: a handful of decaying taps, decorrelated per channel.
+    const tapCount = 6;
+    for (let k = 0; k < tapCount; k += 1) {
+      const at = Math.floor(rate * (params.reflectionsDelay + k * 0.0063 * (1 + channel * 0.17)));
+      if (at < length) {
+        const polarity = (k + channel) % 2 === 0 ? 1 : -1;
+        data[at] += polarity * params.reflectionsGain * 0.7 * (1 - k / tapCount);
+      }
+    }
+    // Late tail: low-passed decaying noise.
+    let lowpassState = 0;
+    const start = Math.floor(rate * tailStart);
+    for (let i = start; i < length; i += 1) {
+      const t = (i - start) / rate;
+      if (Math.random() > occupancy) {
+        continue;
+      }
+      const white = Math.random() * 2 - 1;
+      lowpassState += alpha * (white - lowpassState);
+      data[i] += lowpassState * Math.exp(-t * decayRate) * params.reverbGain;
+    }
+  }
+  return buffer;
+}
+
 function matrixPosition(matrix: Float32Array): Vec3 {
   return [matrix[12], matrix[13], matrix[14]];
 }
@@ -608,32 +665,13 @@ export class AudioSystem {
       return { environmentIndex: index, def, input, gate, returnGain };
     }
 
-    // Parametric approximation: pre-delayed feedback loop with an in-loop
-    // low-pass modeling decayHFRatio (same topology as the AudioGraphJS bus).
-    const earlyDelay = context.createDelay(Math.max(params.reflectionsDelay, 1));
-    earlyDelay.delayTime.value = params.reflectionsDelay;
-    const earlyGain = context.createGain();
-    earlyGain.gain.value = params.reflectionsGain;
-    const lateDelay = context.createDelay(Math.max(params.reverbDelay + 0.1, 1));
-    const loopTime = Math.max(params.reverbDelay, 0.01);
-    lateDelay.delayTime.value = loopTime;
-    const feedback = context.createGain();
-    feedback.gain.value = Math.min(Math.pow(0.001, loopTime / Math.max(params.decayTime, 0.01)), 0.98);
-    const loopFilter = context.createBiquadFilter();
-    loopFilter.type = "lowpass";
-    loopFilter.frequency.value = Math.min(Math.max(20000 * params.decayHFRatio, 200), 20000);
-    const lateGain = context.createGain();
-    lateGain.gain.value = params.reverbGain;
-
-    input.connect(earlyDelay);
-    earlyDelay.connect(earlyGain);
-    earlyGain.connect(returnGain);
-    earlyDelay.connect(lateDelay);
-    lateDelay.connect(feedback);
-    feedback.connect(loopFilter);
-    loopFilter.connect(lateDelay);
-    lateDelay.connect(lateGain);
-    lateGain.connect(returnGain);
+    // Parametric reverb realized as a generated impulse response + convolution
+    // (the spec's sanctioned realization). Convolution is unconditionally
+    // stable — no feedback topology, no runaway.
+    const convolver = context.createConvolver();
+    convolver.buffer = generateReverbImpulse(context, params);
+    input.connect(convolver);
+    convolver.connect(returnGain);
     return { environmentIndex: index, def, input, gate, returnGain };
   }
 
