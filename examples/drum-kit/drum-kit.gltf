@@ -1,0 +1,1543 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "make-drum-kit.mjs",
+    "copyright": "CC0 — procedurally generated demo asset for the glTF layered audio proposals"
+  },
+  "extensionsUsed": [
+    "KHR_audio_emitter",
+    "KHR_audio_environment",
+    "KHR_interactivity",
+    "KHR_node_selectability"
+  ],
+  "extensions": {
+    "KHR_audio_emitter": {
+      "audio": [
+        {
+          "uri": "kick.mp3",
+          "mimeType": "audio/mpeg"
+        },
+        {
+          "uri": "snare.mp3",
+          "mimeType": "audio/mpeg"
+        },
+        {
+          "uri": "tomHigh.mp3",
+          "mimeType": "audio/mpeg"
+        },
+        {
+          "uri": "tomMid.mp3",
+          "mimeType": "audio/mpeg"
+        },
+        {
+          "uri": "tomFloor.mp3",
+          "mimeType": "audio/mpeg"
+        },
+        {
+          "uri": "hihat.mp3",
+          "mimeType": "audio/mpeg"
+        },
+        {
+          "uri": "crash.mp3",
+          "mimeType": "audio/mpeg"
+        },
+        {
+          "uri": "ride.mp3",
+          "mimeType": "audio/mpeg"
+        }
+      ],
+      "sources": [
+        {
+          "name": "kick",
+          "audio": 0,
+          "gain": 1
+        },
+        {
+          "name": "snare",
+          "audio": 1,
+          "gain": 0.9
+        },
+        {
+          "name": "tomHigh",
+          "audio": 2,
+          "gain": 0.85
+        },
+        {
+          "name": "tomMid",
+          "audio": 3,
+          "gain": 0.85
+        },
+        {
+          "name": "tomFloor",
+          "audio": 4,
+          "gain": 0.9
+        },
+        {
+          "name": "hihat",
+          "audio": 5,
+          "gain": 0.7
+        },
+        {
+          "name": "crash",
+          "audio": 6,
+          "gain": 0.8
+        },
+        {
+          "name": "ride",
+          "audio": 7,
+          "gain": 0.75
+        }
+      ],
+      "emitters": [
+        {
+          "name": "KickEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            0
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.35
+            }
+          }
+        },
+        {
+          "name": "SnareEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            1
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.55
+            }
+          }
+        },
+        {
+          "name": "TomHighEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            2
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.5
+            }
+          }
+        },
+        {
+          "name": "TomMidEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            3
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.5
+            }
+          }
+        },
+        {
+          "name": "TomFloorEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            4
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.5
+            }
+          }
+        },
+        {
+          "name": "HiHatEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            5
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.5
+            }
+          }
+        },
+        {
+          "name": "CrashEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            6
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.8
+            }
+          }
+        },
+        {
+          "name": "RideEmitter",
+          "type": "positional",
+          "gain": 1,
+          "sources": [
+            7
+          ],
+          "positional": {
+            "shapeType": "omnidirectional",
+            "distanceModel": "inverse",
+            "refDistance": 0.6,
+            "maxDistance": 30,
+            "rolloffFactor": 1,
+            "extensions": {
+              "KHR_audio_environment": {
+                "airAbsorption": {
+                  "enabled": true,
+                  "cutoffAtMaxDistance": 7000
+                }
+              }
+            }
+          },
+          "extensions": {
+            "KHR_audio_environment": {
+              "directLevel": 1,
+              "reverbLevel": 0.7
+            }
+          }
+        }
+      ]
+    },
+    "KHR_audio_environment": {
+      "listeners": [
+        {
+          "name": "Player",
+          "gain": 1,
+          "spatializationModel": "HRTF"
+        }
+      ],
+      "environments": [
+        {
+          "name": "Studio",
+          "reverb": {
+            "preset": "smallRoom",
+            "mix": 0.28
+          }
+        }
+      ]
+    },
+    "KHR_interactivity": {
+      "graph": 0,
+      "graphs": [
+        {
+          "types": [
+            {
+              "signature": "float"
+            }
+          ],
+          "declarations": [
+            {
+              "op": "event/onSelect"
+            },
+            {
+              "op": "pointer/set"
+            }
+          ],
+          "nodes": [
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    0
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 1,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/0/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            },
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    1
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 3,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/1/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            },
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    2
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 5,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/2/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            },
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    3
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 7,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/3/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            },
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    4
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 9,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/4/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            },
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    5
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 11,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/5/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            },
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    6
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 13,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/6/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            },
+            {
+              "declaration": 0,
+              "configuration": {
+                "nodeIndex": {
+                  "value": [
+                    7
+                  ]
+                },
+                "stopPropagation": {
+                  "value": [
+                    true
+                  ]
+                }
+              },
+              "flows": {
+                "out": {
+                  "node": 15,
+                  "socket": "in"
+                }
+              }
+            },
+            {
+              "declaration": 1,
+              "configuration": {
+                "pointer": {
+                  "value": [
+                    "/extensions/KHR_audio_emitter/sources/7/playing"
+                  ]
+                },
+                "type": {
+                  "value": [
+                    0
+                  ]
+                }
+              },
+              "values": {
+                "value": {
+                  "value": [
+                    1
+                  ],
+                  "type": 0
+                }
+              }
+            }
+          ],
+          "variables": []
+        }
+      ]
+    }
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "DrumKit",
+      "nodes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "extensions": {
+        "KHR_audio_environment": {
+          "environment": 0,
+          "activeListener": 0
+        }
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Kick",
+      "mesh": 0,
+      "translation": [
+        0,
+        0.34,
+        0.1
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            0
+          ]
+        }
+      },
+      "rotation": [
+        0.7071067811865475,
+        0,
+        0,
+        0.7071067811865476
+      ]
+    },
+    {
+      "name": "Snare",
+      "mesh": 1,
+      "translation": [
+        -0.34,
+        0.62,
+        0.42
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "TomHigh",
+      "mesh": 2,
+      "translation": [
+        -0.17,
+        0.85,
+        0.14
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            2
+          ]
+        }
+      },
+      "rotation": [
+        0.1395431146442365,
+        0,
+        0,
+        0.9902159962126371
+      ]
+    },
+    {
+      "name": "TomMid",
+      "mesh": 3,
+      "translation": [
+        0.18,
+        0.85,
+        0.13
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            3
+          ]
+        }
+      },
+      "rotation": [
+        0.1395431146442365,
+        0,
+        0,
+        0.9902159962126371
+      ]
+    },
+    {
+      "name": "TomFloor",
+      "mesh": 4,
+      "translation": [
+        0.56,
+        0.45,
+        0.4
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            4
+          ]
+        }
+      }
+    },
+    {
+      "name": "HiHat",
+      "mesh": 5,
+      "translation": [
+        -0.68,
+        0.85,
+        0.35
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            5
+          ]
+        }
+      }
+    },
+    {
+      "name": "Crash",
+      "mesh": 6,
+      "translation": [
+        -0.5,
+        1.18,
+        -0.02
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            6
+          ]
+        }
+      },
+      "rotation": [
+        -0.09942936415533363,
+        -0.008972882649697478,
+        0.08942953082116695,
+        0.9909771177669677
+      ]
+    },
+    {
+      "name": "Ride",
+      "mesh": 7,
+      "translation": [
+        0.58,
+        1.12,
+        -0.05
+      ],
+      "extensions": {
+        "KHR_audio_emitter": {
+          "emitters": [
+            7
+          ]
+        }
+      },
+      "rotation": [
+        -0.08962588424840452,
+        0.006734573381505738,
+        -0.07462644674207644,
+        0.9931529287278535
+      ]
+    },
+    {
+      "name": "Hardware",
+      "mesh": 8,
+      "extensions": {
+        "KHR_node_selectability": {
+          "selectable": false
+        }
+      }
+    },
+    {
+      "name": "ListenerCamera",
+      "camera": 0,
+      "translation": [
+        0,
+        1.35,
+        2.4
+      ],
+      "extensions": {
+        "KHR_audio_environment": {
+          "listener": 0
+        }
+      }
+    }
+  ],
+  "cameras": [
+    {
+      "type": "perspective",
+      "perspective": {
+        "yfov": 0.75,
+        "znear": 0.05,
+        "zfar": 100
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "KickMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "SnareMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5,
+          "material": 1,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "TomHighMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "TomMidMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 9,
+            "NORMAL": 10
+          },
+          "indices": 11,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "TomFloorMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 12,
+            "NORMAL": 13
+          },
+          "indices": 14,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "HiHatMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 15,
+            "NORMAL": 16
+          },
+          "indices": 17,
+          "material": 2,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "CrashMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 18,
+            "NORMAL": 19
+          },
+          "indices": 20,
+          "material": 2,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "RideMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 21,
+            "NORMAL": 22
+          },
+          "indices": 23,
+          "material": 2,
+          "mode": 4
+        }
+      ]
+    },
+    {
+      "name": "HardwareMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 24,
+            "NORMAL": 25
+          },
+          "indices": 26,
+          "material": 3,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "ShellRed",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.55,
+          0.06,
+          0.09,
+          1
+        ],
+        "metallicFactor": 0.2,
+        "roughnessFactor": 0.35
+      }
+    },
+    {
+      "name": "SnareSteel",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.75,
+          0.76,
+          0.78,
+          1
+        ],
+        "metallicFactor": 0.9,
+        "roughnessFactor": 0.35
+      }
+    },
+    {
+      "name": "CymbalBronze",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.87,
+          0.68,
+          0.28,
+          1
+        ],
+        "metallicFactor": 1,
+        "roughnessFactor": 0.3
+      }
+    },
+    {
+      "name": "Chrome",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.6,
+          0.6,
+          0.62,
+          1
+        ],
+        "metallicFactor": 1,
+        "roughnessFactor": 0.25
+      }
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "drum-kit.bin",
+      "byteLength": 51984
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 1992,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1992,
+      "byteLength": 1992,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3984,
+      "byteLength": 960,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4944,
+      "byteLength": 1800,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6744,
+      "byteLength": 1800,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8544,
+      "byteLength": 864,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 9408,
+      "byteLength": 1608,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 11016,
+      "byteLength": 1608,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 12624,
+      "byteLength": 768,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 13392,
+      "byteLength": 1608,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 15000,
+      "byteLength": 1608,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 16608,
+      "byteLength": 768,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 17376,
+      "byteLength": 1800,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 19176,
+      "byteLength": 1800,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 20976,
+      "byteLength": 864,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 21840,
+      "byteLength": 3984,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 25824,
+      "byteLength": 3984,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 29808,
+      "byteLength": 1920,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 31728,
+      "byteLength": 2184,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 33912,
+      "byteLength": 2184,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 36096,
+      "byteLength": 1056,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 37152,
+      "byteLength": 2184,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 39336,
+      "byteLength": 2184,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 41520,
+      "byteLength": 1056,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 42576,
+      "byteLength": 3864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 46440,
+      "byteLength": 3864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 50304,
+      "byteLength": 1680,
+      "target": 34963
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 166,
+      "type": "VEC3",
+      "min": [
+        -0.32,
+        -0.21,
+        -0.32
+      ],
+      "max": [
+        0.32,
+        0.21,
+        0.32
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 166,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 480,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 150,
+      "type": "VEC3",
+      "min": [
+        -0.18,
+        -0.07,
+        -0.18
+      ],
+      "max": [
+        0.18,
+        0.07,
+        0.18
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 150,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5123,
+      "count": 432,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 134,
+      "type": "VEC3",
+      "min": [
+        -0.14,
+        -0.08,
+        -0.14
+      ],
+      "max": [
+        0.14,
+        0.08,
+        0.14
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 134,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5123,
+      "count": 384,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 134,
+      "type": "VEC3",
+      "min": [
+        -0.16,
+        -0.09,
+        -0.16
+      ],
+      "max": [
+        0.16,
+        0.09,
+        0.16
+      ]
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 134,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5123,
+      "count": 384,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 12,
+      "componentType": 5126,
+      "count": 150,
+      "type": "VEC3",
+      "min": [
+        -0.2,
+        -0.16,
+        -0.2
+      ],
+      "max": [
+        0.2,
+        0.16,
+        0.2
+      ]
+    },
+    {
+      "bufferView": 13,
+      "componentType": 5126,
+      "count": 150,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 14,
+      "componentType": 5123,
+      "count": 432,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 15,
+      "componentType": 5126,
+      "count": 332,
+      "type": "VEC3",
+      "min": [
+        -0.17,
+        -0.041,
+        -0.17
+      ],
+      "max": [
+        0.17,
+        0.006,
+        0.17
+      ]
+    },
+    {
+      "bufferView": 16,
+      "componentType": 5126,
+      "count": 332,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 17,
+      "componentType": 5123,
+      "count": 960,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 18,
+      "componentType": 5126,
+      "count": 182,
+      "type": "VEC3",
+      "min": [
+        -0.25,
+        -0.005,
+        -0.25
+      ],
+      "max": [
+        0.25,
+        0.005,
+        0.25
+      ]
+    },
+    {
+      "bufferView": 19,
+      "componentType": 5126,
+      "count": 182,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 20,
+      "componentType": 5123,
+      "count": 528,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 21,
+      "componentType": 5126,
+      "count": 182,
+      "type": "VEC3",
+      "min": [
+        -0.28,
+        -0.006,
+        -0.28
+      ],
+      "max": [
+        0.28,
+        0.006,
+        0.28
+      ]
+    },
+    {
+      "bufferView": 22,
+      "componentType": 5126,
+      "count": 182,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 23,
+      "componentType": 5123,
+      "count": 528,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 24,
+      "componentType": 5126,
+      "count": 322,
+      "type": "VEC3",
+      "min": [
+        -0.6940000000000001,
+        -0.02999999999999997,
+        -0.06331479122813216
+      ],
+      "max": [
+        0.6940000000000001,
+        1.18,
+        0.5333147912281322
+      ]
+    },
+    {
+      "bufferView": 25,
+      "componentType": 5126,
+      "count": 322,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 26,
+      "componentType": 5123,
+      "count": 840,
+      "type": "SCALAR"
+    }
+  ]
+}

@@ -10,6 +10,7 @@
     "test:interactivity": "npm --prefix packages/interactivity run test"
   },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@types/node": "^22.5.2",
     "@webgpu/types": "^0.1.44",
     "pngjs": "^7.0.0",
