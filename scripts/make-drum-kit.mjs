@@ -1,6 +1,9 @@
 // Generates examples/drum-kit/: a playable drum kit expressed purely in glTF —
 // procedural stylized kit geometry (CC0-by-construction), synthesized drum
-// one-shots encoded as MP3 (KHR_audio_emitter base codec), per-drum positional
+// one-shots encoded as MP3 (KHR_audio_emitter base codec), a KHR_audio_graph
+// processing graph (kick -> lowpass+gain, snare -> peaking EQ, crash ->
+// highshelf, bound via inputs[]/outputs[]; the remaining drums are direct
+// emitter paths, demonstrating rule-12 coexistence), per-drum positional
 // emitters with environment sends (KHR_audio_environment), and a
 // KHR_interactivity graph: event/onSelect on each drum -> pointer/set of the
 // source's `playing` pointer (the viewer's E1 one-shot prototype).
@@ -408,15 +411,45 @@ PIECES.forEach((piece, index) => {
   });
 });
 
+// KHR_audio_graph: processing chains for three of the drums. Their emitters
+// are bound via outputs[] (rule 12: the emitters' own sources[] are ignored;
+// the graph supplies the signal). The other five drums stay direct-fed.
+const pieceIndex = (name) => PIECES.findIndex((p) => p.name === name);
+const audioGraph = {
+  graphs: [{
+    name: "drum-processing",
+    nodes: [
+      { kind: "lowpass", params: { frequency: 3200, qualityFactor: 0.7 }, label: "kickWarmth" },
+      { kind: "gain", params: { gain: 1.15 }, label: "kickMakeup" },
+      { kind: "peaking", params: { frequency: 1800, qualityFactor: 1.0, gain: 3.0 }, label: "snareCrack" },
+      { kind: "highshelf", params: { frequency: 6000, gain: 2.5 }, label: "crashAir" }
+    ],
+    connections: [
+      { from: { node: 0 }, to: { node: 1 } }
+    ],
+    inputs: [
+      { source: pieceIndex("Kick"), node: 0 },
+      { source: pieceIndex("Snare"), node: 2 },
+      { source: pieceIndex("Crash"), node: 3 }
+    ],
+    outputs: [
+      { node: 1, emitter: pieceIndex("Kick") },
+      { node: 2, emitter: pieceIndex("Snare") },
+      { node: 3, emitter: pieceIndex("Crash") }
+    ]
+  }]
+};
+
 const gltf = {
   asset: {
     version: "2.0",
     generator: "make-drum-kit.mjs",
     copyright: "CC0 — procedurally generated demo asset for the glTF layered audio proposals"
   },
-  extensionsUsed: ["KHR_audio_emitter", "KHR_audio_environment", "KHR_interactivity", "KHR_node_selectability"],
+  extensionsUsed: ["KHR_audio_emitter", "KHR_audio_graph", "KHR_audio_environment", "KHR_interactivity", "KHR_node_selectability"],
   extensions: {
     KHR_audio_emitter: { audio, sources, emitters },
+    KHR_audio_graph: audioGraph,
     KHR_audio_environment: {
       listeners: [{ name: "Player", gain: 1.0, spatializationModel: "HRTF" }],
       environments: [{ name: "Studio", reverb: { preset: "smallRoom", mix: 0.28 } }]
@@ -447,6 +480,6 @@ const gltf = {
 };
 
 fs.writeFileSync(path.join(outDir, "drum-kit.gltf"), JSON.stringify(gltf, null, 2));
-console.log(`wrote drum-kit.gltf: ${PIECES.length} playable pieces, ${graphNodes.length} interactivity nodes, bin ${(bin.length / 1024).toFixed(1)} KiB`);
+console.log(`wrote drum-kit.gltf: ${PIECES.length} playable pieces, ${audioGraph.graphs[0].nodes.length} audio-graph nodes, ${graphNodes.length} interactivity nodes, bin ${(bin.length / 1024).toFixed(1)} KiB`);
 console.log(`camera/listener node: ${cameraNodeIndex}`);
 console.log("Open: viewer.html?model=/examples/drum-kit/drum-kit.gltf — enable Audio, click the drums.");

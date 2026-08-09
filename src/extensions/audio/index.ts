@@ -1,8 +1,10 @@
-// KHR_audio_emitter + KHR_audio_environment support for the WebGPU viewer.
-// Realized with the Web Audio API: emitters map to PannerNode chains, the
-// environment layer adds a listener bus, preset/parametric reverb with zone
-// crossfades, per-emitter direct/reverb sends, doppler, and distance/cone
-// low-pass filtering. KHR_audio_graph is not wired yet (documented gap).
+// KHR_audio_emitter + KHR_audio_graph + KHR_audio_environment support for the
+// WebGPU viewer, realized with the Web Audio API: emitters map to PannerNode
+// chains; document-level audio graphs (16 node kinds) process source signals
+// before emission per the graph spec's inputs[]/outputs[] bindings (rule 12:
+// a graph-bound emitter ignores its own sources[]); the environment layer adds
+// a listener bus, preset/parametric reverb with zone crossfades, per-emitter
+// direct/reverb sends, doppler, and distance/cone low-pass filtering.
 
 import { mat4Invert, vec3TransformMat4, type Vec3 } from "../../renderer/math";
 import {
@@ -84,10 +86,33 @@ interface EnvironmentDef {
   doppler?: DopplerProperties;
 }
 
+interface GraphNodeDef {
+  kind: string;
+  params?: Record<string, unknown>;
+  label?: string;
+  bypass?: boolean;
+}
+
+interface GraphDef {
+  name?: string;
+  nodes: GraphNodeDef[];
+  connections?: Array<{ from: { node: number; output?: number }; to: { node: number; input?: number } }>;
+  inputs?: Array<{ source: number; node: number; input?: number }>;
+  outputs?: Array<{ node: number; output?: number; emitter: number }>;
+}
+
+/** Attachment point where a KHR source's signal enters a graph. */
+interface GraphSourceAttachment {
+  node: AudioNode;
+  input: number;
+}
+
 interface EmitterInstance {
   emitterIndex: number;
   nodeIndex: number | null; // null = scene-level global emitter
   def: EmitterDef;
+  /** Rule 12: emitter is fed by a graph output; its own sources[] are ignored. */
+  graphFed: boolean;
   input: GainNode;
   panner: PannerNode | null;
   filter: BiquadFilterNode | null;
@@ -192,6 +217,8 @@ export class AudioSystem {
   private emitterInstances: EmitterInstance[] = [];
   private environmentBuses = new Map<number, EnvironmentBus>();
   private zones: ZoneBinding[] = [];
+  private graphSources = new Map<number, GraphSourceAttachment[]>();
+  private graphFedEmitters = new Set<number>();
   private defaultEnvironmentIndex: number | undefined;
   private listenerDef: ListenerDef | undefined;
   private previousListenerPosition: Vec3 | null = null;
@@ -237,12 +264,27 @@ export class AudioSystem {
     this.collectZonesAndDefault();
 
     await this.decodeAudioData(emitterExt.audio ?? []);
+
+    // KHR_audio_graph: emitters bound via a graph's outputs[] ignore their own
+    // sources[] (rule 12) — mark them before building emitter chains.
+    const graphs = (this.json.extensions?.KHR_audio_graph?.graphs ?? []) as GraphDef[];
+    for (const graph of graphs) {
+      for (const output of graph.outputs ?? []) {
+        this.graphFedEmitters.add(output.emitter);
+      }
+    }
+
     this.buildEmitterInstances(emitterExt);
+    let graphNodeCount = 0;
+    for (const graph of graphs) {
+      graphNodeCount += this.buildGraph(graph, emitterExt.sources ?? []);
+    }
     this.started = true;
     console.info(
       `KHR_audio: started — context=${context.state}, sampleRate=${context.sampleRate}, ` +
       `buffers=${this.buffers.size}/${(emitterExt.audio ?? []).length}, ` +
-      `emitters=${this.emitterInstances.length}, environments=${this.environmentBuses.size}, zones=${this.zones.length}`
+      `emitters=${this.emitterInstances.length}, graphs=${graphs.length} (${graphNodeCount} nodes), ` +
+      `environments=${this.environmentBuses.size}, zones=${this.zones.length}`
     );
     if (context.state !== "running") {
       try {
@@ -300,6 +342,8 @@ export class AudioSystem {
     }
     this.emitterInstances = [];
     this.environmentBuses.clear();
+    this.graphSources.clear();
+    this.graphFedEmitters.clear();
     this.buffers.clear();
     void this.context?.close();
     this.context = null;
@@ -534,6 +578,162 @@ export class AudioSystem {
     return false;
   }
 
+  /**
+   * Instantiate one KHR_audio_graph graph: create a Web Audio node per graph
+   * node, wire connections (with port indices), register inputs[] as source
+   * attachment points (autoplay sources start immediately; others are fired by
+   * triggerSource), and route outputs[] into the bound emitters' chains.
+   * Returns the number of nodes created.
+   */
+  private buildGraph(graph: GraphDef, sources: SourceDef[]): number {
+    const context = this.context!;
+    const FILTERS = new Set(["lowpass", "highpass", "bandpass", "lowshelf", "highshelf", "peaking", "notch", "allpass"]);
+    const built: AudioNode[] = [];
+
+    for (const nodeDef of graph.nodes) {
+      const params = nodeDef.params ?? {};
+      let node: AudioNode;
+      if (nodeDef.bypass) {
+        node = context.createGain(); // pass-through realization of bypass
+      } else if (FILTERS.has(nodeDef.kind)) {
+        const filter = context.createBiquadFilter();
+        filter.type = nodeDef.kind as BiquadFilterType;
+        if (typeof params.frequency === "number") filter.frequency.value = params.frequency;
+        if (typeof params.qualityFactor === "number") filter.Q.value = params.qualityFactor;
+        if (typeof params.gain === "number") filter.gain.value = params.gain; // dB (shelf/peaking)
+        node = filter;
+      } else {
+        switch (nodeDef.kind) {
+          case "gain": {
+            const gain = context.createGain();
+            if (typeof params.gain === "number") gain.gain.value = params.gain;
+            node = gain;
+            break;
+          }
+          case "delay": {
+            const delay = context.createDelay(typeof params.maxDelayTime === "number" ? params.maxDelayTime : 1.0);
+            if (typeof params.delayTime === "number") delay.delayTime.value = params.delayTime;
+            node = delay;
+            break;
+          }
+          case "waveshaper": {
+            const shaper = context.createWaveShaper();
+            if (Array.isArray(params.curve)) {
+              shaper.curve = new Float32Array(params.curve as number[]);
+            } else if (typeof params.amount === "number") {
+              // amount -> curve mapping (informative in the spec): tanh drive
+              const n = 1024;
+              const curve = new Float32Array(n);
+              const drive = 1 + params.amount * 20;
+              for (let i = 0; i < n; i += 1) {
+                const x = (i / (n - 1)) * 2 - 1;
+                curve[i] = Math.tanh(x * drive) / Math.tanh(drive);
+              }
+              shaper.curve = curve;
+            }
+            if (params.oversample === "2x" || params.oversample === "4x") {
+              shaper.oversample = params.oversample;
+            }
+            node = shaper;
+            break;
+          }
+          case "oscillator": {
+            const osc = context.createOscillator();
+            const type = params.type as string;
+            if (type === "sine" || type === "square" || type === "triangle" || type === "sawtooth") {
+              osc.type = type;
+            }
+            if (typeof params.frequency === "number") osc.frequency.value = params.frequency;
+            if (typeof params.detune === "number") osc.detune.value = params.detune;
+            osc.start();
+            node = osc;
+            break;
+          }
+          case "splitter":
+            node = context.createChannelSplitter();
+            break;
+          case "channelmerger":
+            node = context.createChannelMerger();
+            break;
+          case "channelmixer": {
+            const mixer = context.createGain();
+            if (typeof params.outputChannels === "number") {
+              mixer.channelCount = params.outputChannels;
+              mixer.channelCountMode = "explicit";
+            }
+            if (params.channelInterpretation === "discrete" || params.channelInterpretation === "speakers") {
+              mixer.channelInterpretation = params.channelInterpretation;
+            }
+            node = mixer;
+            break;
+          }
+          case "audiomixer":
+          default: {
+            if (nodeDef.kind !== "audiomixer") {
+              console.warn(`KHR_audio_graph: unknown node kind "${nodeDef.kind}" — treating as pass-through gain`);
+            }
+            node = context.createGain();
+            break;
+          }
+        }
+      }
+      built.push(node);
+    }
+
+    for (const connection of graph.connections ?? []) {
+      const from = built[connection.from.node];
+      const to = built[connection.to.node];
+      if (from && to) {
+        from.connect(to, connection.from.output ?? 0, connection.to.input ?? 0);
+      }
+    }
+
+    for (const input of graph.inputs ?? []) {
+      const target = built[input.node];
+      const source = sources[input.source];
+      if (!target || !source) {
+        continue;
+      }
+      const attachment: GraphSourceAttachment = { node: target, input: input.input ?? 0 };
+      const existing = this.graphSources.get(input.source) ?? [];
+      existing.push(attachment);
+      this.graphSources.set(input.source, existing);
+      if (source.autoplay && typeof source.audio === "number") {
+        this.startPlayerInto(source, attachment);
+      }
+    }
+
+    for (const output of graph.outputs ?? []) {
+      const from = built[output.node];
+      for (const instance of this.emitterInstances) {
+        if (instance.emitterIndex === output.emitter && from) {
+          from.connect(instance.input, output.output ?? 0, 0);
+        }
+      }
+    }
+    return built.length;
+  }
+
+  /** Start a buffer player for a source into a graph attachment point. */
+  private startPlayerInto(source: SourceDef, attachment: GraphSourceAttachment): AudioBufferSourceNode | null {
+    const context = this.context!;
+    const buffer = typeof source.audio === "number" ? this.buffers.get(source.audio) : undefined;
+    if (!buffer) {
+      return null;
+    }
+    const node = context.createBufferSource();
+    node.buffer = buffer;
+    node.loop = source.loop ?? false;
+    node.playbackRate.value = source.playbackRate ?? 1.0;
+    const gain = context.createGain();
+    gain.gain.value = source.gain ?? 1.0;
+    node.connect(gain);
+    gain.connect(attachment.node, 0, attachment.input);
+    node.start();
+    node.onended = () => gain.disconnect();
+    return node;
+  }
+
   /** (Re)fire or stop every instance of a source — one-shot drum-pad semantics. */
   private triggerSource(sourceIndex: number, play: boolean): number {
     const context = this.context!;
@@ -548,9 +748,15 @@ export class AudioSystem {
     if (play && !buffer) {
       console.warn(`KHR_audio: source ${sourceIndex} has no decoded buffer (audio[${def.audio}])`);
     }
+    // Graph-bound sources: fire a player into each registered attachment point.
+    for (const attachment of this.graphSources.get(sourceIndex) ?? []) {
+      if (play && this.startPlayerInto(def, attachment)) {
+        fired += 1;
+      }
+    }
     for (const instance of this.emitterInstances) {
-      if (!(instance.def.sources ?? []).includes(sourceIndex)) {
-        continue;
+      if (instance.graphFed || !(instance.def.sources ?? []).includes(sourceIndex)) {
+        continue; // rule 12: graph-fed emitters ignore their own sources[]
       }
       for (let i = instance.sources.length - 1; i >= 0; i -= 1) {
         const existing = instance.sources[i];
@@ -816,9 +1022,10 @@ export class AudioSystem {
       sendGain.connect(this.sendBus!);
     }
 
-    // Sources.
+    // Sources (skipped entirely for graph-fed emitters — rule 12).
+    const graphFed = this.graphFedEmitters.has(emitterIndex);
     const instanceSources: EmitterInstance["sources"] = [];
-    for (const sourceIndex of def.sources ?? []) {
+    for (const sourceIndex of graphFed ? [] : def.sources ?? []) {
       const source = sources[sourceIndex];
       if (!source || typeof source.audio !== "number") {
         continue;
@@ -846,6 +1053,7 @@ export class AudioSystem {
       emitterIndex,
       nodeIndex,
       def,
+      graphFed,
       input,
       panner,
       filter,
