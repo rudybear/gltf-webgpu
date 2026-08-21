@@ -34,12 +34,27 @@ interface AudioDataDef {
   bufferView?: number;
 }
 
+interface OscillatorData {
+  type?: string;
+  frequency?: number;
+  detune?: number;
+  pulseWidth?: number;
+  periodicWave?: { real: number[]; imag: number[] };
+}
+
 interface SourceDef {
   audio?: number;
   gain?: number;
   autoplay?: boolean;
   loop?: boolean;
   playbackRate?: number;
+  extensions?: {
+    KHR_audio_graph?: {
+      oscillator?: OscillatorData;
+      when?: number;
+      duration?: number;
+    };
+  };
 }
 
 interface PositionalDef {
@@ -638,6 +653,7 @@ export class AudioSystem {
             break;
           }
           case "oscillator": {
+            console.warn('KHR_audio_graph: "oscillator" is not a graph node kind (r2); declare it as source data via source.extensions.KHR_audio_graph.oscillator');
             const osc = context.createOscillator();
             const type = params.type as string;
             if (type === "sine" || type === "square" || type === "triangle" || type === "sawtooth") {
@@ -649,12 +665,27 @@ export class AudioSystem {
             node = osc;
             break;
           }
-          case "splitter":
-            node = context.createChannelSplitter();
+          case "splitter": {
+            let maxPort = 0;
+            const index = built.length;
+            for (const c of graph.connections ?? []) {
+              if (c.from.node === index) maxPort = Math.max(maxPort, c.from.output ?? 0);
+            }
+            node = context.createChannelSplitter(maxPort + 1); // rule 9 (r2): connection-derived
             break;
-          case "channelmerger":
-            node = context.createChannelMerger();
+          }
+          case "channelmerger": {
+            let maxPort = 0;
+            const index = built.length;
+            for (const c of graph.connections ?? []) {
+              if (c.to.node === index) maxPort = Math.max(maxPort, c.to.input ?? 0);
+            }
+            for (const inp of graph.inputs ?? []) {
+              if (inp.node === index) maxPort = Math.max(maxPort, inp.input ?? 0);
+            }
+            node = context.createChannelMerger(maxPort + 1); // rule 10 (r2): connection-derived
             break;
+          }
           case "channelmixer": {
             const mixer = context.createGain();
             if (typeof params.outputChannels === "number") {
@@ -714,9 +745,43 @@ export class AudioSystem {
     return built.length;
   }
 
-  /** Start a buffer player for a source into a graph attachment point. */
-  private startPlayerInto(source: SourceDef, attachment: GraphSourceAttachment): AudioBufferSourceNode | null {
+  /** Start a player (buffer clip or oscillator source) into a graph attachment point. */
+  private startPlayerInto(source: SourceDef, attachment: GraphSourceAttachment): AudioScheduledSourceNode | null {
     const context = this.context!;
+    const ext = source.extensions?.KHR_audio_graph;
+
+    // Oscillator source (r2): waveform data on the source, uniform scheduling.
+    if (ext?.oscillator && typeof source.audio !== "number") {
+      const osc = context.createOscillator();
+      const data = ext.oscillator;
+      if (data.type === "sine" || data.type === "square" || data.type === "triangle" || data.type === "sawtooth") {
+        osc.type = data.type;
+      }
+      if (typeof data.frequency === "number") osc.frequency.value = data.frequency;
+      if (typeof data.detune === "number") osc.detune.value = data.detune;
+      if (data.periodicWave?.real && data.periodicWave.imag) {
+        try {
+          osc.setPeriodicWave(context.createPeriodicWave(
+            new Float32Array(data.periodicWave.real),
+            new Float32Array(data.periodicWave.imag)
+          ));
+        } catch {
+          // backend without PeriodicWave support
+        }
+      }
+      const gain = context.createGain();
+      gain.gain.value = source.gain ?? 1.0;
+      osc.connect(gain);
+      gain.connect(attachment.node, 0, attachment.input);
+      const when = context.currentTime + Math.max(0, ext.when ?? 0);
+      osc.start(when);
+      if (typeof ext.duration === "number") {
+        osc.stop(when + ext.duration);
+      }
+      osc.onended = () => gain.disconnect();
+      return osc;
+    }
+
     const buffer = typeof source.audio === "number" ? this.buffers.get(source.audio) : undefined;
     if (!buffer) {
       return null;
@@ -757,6 +822,13 @@ export class AudioSystem {
     for (const instance of this.emitterInstances) {
       if (instance.graphFed || !(instance.def.sources ?? []).includes(sourceIndex)) {
         continue; // rule 12: graph-fed emitters ignore their own sources[]
+      }
+      // Oscillator source (r2): fire a fresh scheduled oscillator (phase resets).
+      if (def.extensions?.KHR_audio_graph?.oscillator && typeof def.audio !== "number") {
+        if (play && this.startPlayerInto(def, { node: instance.input, input: 0 })) {
+          fired += 1;
+        }
+        continue;
       }
       for (let i = instance.sources.length - 1; i >= 0; i -= 1) {
         const existing = instance.sources[i];
@@ -1027,7 +1099,17 @@ export class AudioSystem {
     const instanceSources: EmitterInstance["sources"] = [];
     for (const sourceIndex of graphFed ? [] : def.sources ?? []) {
       const source = sources[sourceIndex];
-      if (!source || typeof source.audio !== "number") {
+      if (!source) {
+        continue;
+      }
+      // Oscillator source on a direct emitter path (r2): scheduled like a clip.
+      if (source.extensions?.KHR_audio_graph?.oscillator && typeof source.audio !== "number") {
+        if (source.autoplay) {
+          this.startPlayerInto(source, { node: input, input: 0 });
+        }
+        continue;
+      }
+      if (typeof source.audio !== "number") {
         continue;
       }
       const buffer = this.buffers.get(source.audio);
